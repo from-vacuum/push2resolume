@@ -1,0 +1,2 @@
+path	type	strategy	rel_file_path	timestamp	dirty	build	touch_build	node_x	node_y	node_color
+/externalizations	table	tsv	externalizations.tsv	2026-08-14 06:35:00 UTC				-150	-50	0.9000,0.3000,0.4000

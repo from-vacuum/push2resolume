@@ -1,0 +1,7 @@
+target,slot,pin_key,last_display_name,on_value,last_seen_iso,notes
+LAYER1,1,LAYER1|goo|1,Goo,1.0,2026-08-14T20:11:03,Discovered. Pin key = target|internal name|ordinal of that name in the chain.
+LAYER1,2,LAYER1|goo|2,Goo 2,0.65,2026-08-14T20:11:03,"Second Goo instance. Resolume gives it its own parameter ids, so it is fully addressable."
+LAYER1,3,LAYER1|goo|3,Slime,1.0,2026-08-14T20:11:03,"Third Goo instance, renamed in the Resolume UI. Rename does not move the pad: the pin key uses the internal name."
+LAYER1,4,LAYER1|blur|1,Blur,0.4,2026-08-14T20:11:03,
+LAYER2,1,LAYER2|rgbshift|1,RGB Shift,1.0,2026-08-14T20:11:03,
+COMPOSITION,1,COMPOSITION|blur|1,Blur,0.8,2026-08-14T20:11:03,Composition-level effect.

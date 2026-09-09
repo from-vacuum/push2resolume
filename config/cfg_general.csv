@@ -1,0 +1,44 @@
+key,value,notes
+resolume_ip,127.0.0.1,Resolume host. Set to the other machine IP for a 2-box rig.
+resolume_osc_out_port,6998,"Resolume Preferences > OSC > input port. Confirmed live on this machine as 6998, not the 7000 default."
+resolume_osc_in_port,7001,Only used if the OSC feedback path is ever enabled. Off by default.
+resolume_web_port,8080,Resolume Preferences > Webserver. Serves both REST and WebSocket.
+state_source,websocket,websocket | rest_poll | none.
+fx_transport,ws_param_id,"ws_param_id | osc_name_guess | off. ws_param_id is name-proof, rename-proof, duplicate-proof."
+layer_ids,"1,2,3,4,5,6,7",Seven 1-based Resolume layer indices; Composition is separate.
+clips_per_bank,8,"One row per layer, eight clips per bank."
+bank_count,16,Baseline banks of eight; expands for longer decks.
+fx_slots_per_target,16,"Logical slots per target; eight targets, two pages of eight."
+tick_hz,30,OSC + WS + LED flush rate. Do not exceed 30.
+osc_msgs_per_tick,32,"Hard cap, round-robin queue."
+ws_msgs_per_tick,16,Hard cap on WebSocket set messages per tick.
+led_msgs_per_tick,48,Hard cap on MIDI LED writes per tick.
+osc_deadband,0.002,Minimum change before a float is re-sent.
+encoder_step,0.005,Base value change per encoder click.
+encoder_accel_max,8,Max acceleration multiplier from fast turning.
+encoder_fine_scale,0.2,Step multiplier while SELECT is held.
+fx_fade_ms,120,Ramp time for an FX opacity pad toggle. 0 = instant hard cut.
+fx_default_on_value,1.0,Opacity a pad ramps to. Per-slot override captured with SELECT + pad.
+fx_momentary_ms,400,Hold longer than this and the pad behaves as a momentary stab instead of a toggle.
+fx_rebuild_debounce_ms,250,Coalesce a burst of Resolume structural edits into one registry rebuild.
+fx_pin_ttl_s,300,"How long a removed effect keeps its pad slot reserved, so undo/re-add returns to the same pad."
+fx_pins_file,config/fx_pins.csv,Written BY TouchDesigner so pad positions survive a restart. Delete it to reset the layout.
+fx_reconcile_s,10,"Slow REST reconcile interval, catches edits Resolume does not announce. 0 = off."
+state_poll_s,2,"Periodic REST composition poll interval, catches clip/layer changes made directly in the Resolume UI (no per-parameter WS subscriptions built yet). 0 = off."
+blink_hz,0.5,Software blink rate. Push hardware LED animations are NOT used.
+push_led_brightness,100,SysEx 06. Hardware caps this to 8 if Push runs on USB power only.
+push_display_brightness,255,"SysEx 08. Phase 6: display helper now sends real frames, so brightness is on. 0 = deliberately dark (pre-Phase-6 default)."
+display_helper_script,display/push2_display_helper.py,Standalone process owning the Push 2 display USB endpoint. Never imported into TD -- see README.md.
+display_helper_port,9872,"Loopback TCP port between TD (client, net_display) and the helper (server). NOT 9871 -- that's net/webserver1, already in use for the live-overlay HTML pages."
+display_helper_python_darwin,.venv/bin/python3,Interpreter with pyusb installed.
+display_helper_python_win32,.venv/Scripts/python.exe,"Unused while Windows runs the display stub, but keeps the row symmetric with the MIDI device names above."
+display_helper_libusb_dir_darwin,/opt/homebrew/opt/libusb/lib,StartHelper sets DYLD_LIBRARY_PATH to this so pyusb's libusb1 backend loads. brew install libusb if missing.
+push_aftertouch_mode,0,SysEx 1E. 0 = channel pressure (less traffic).
+push_touchstrip_config,0x10,"SysEx 17. Bar from centre, no autoreturn, pitch bend. 0x00 = bar from bottom."
+push_in_name_darwin,Ableton Push 2 User Port,CoreMIDI. MUST be the User Port.
+push_out_name_darwin,Ableton Push 2 User Port,
+push_in_name_win32,MIDIIN2 (Ableton Push 2),Windows MME. Match by prefix - Windows appends or truncates indices.
+push_out_name_win32,MIDIOUT2 (Ableton Push 2),
+dry_run,0,1 = log all outbound control to a Text DAT instead of sending.
+release_push_on_exit,1,Send Set MIDI Mode = Live (0A 00) and clear LEDs before quitting.
+fx_visible_slots,8,Visible FX slots per target on each page.

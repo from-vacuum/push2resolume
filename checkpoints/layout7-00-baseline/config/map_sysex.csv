@@ -1,0 +1,11 @@
+name,command_id,bytes,when_to_send
+set_midi_mode_user,0A,F0 00 21 1D 01 01 0A 01 F7,Startup + Panic + after USB reconnect. Push boots in Live mode; persistence across power cycle is undocumented.
+set_midi_mode_live,0A,F0 00 21 1D 01 01 0A 00 F7,Shutdown / release Push back to Ableton Live.
+set_midi_mode_dual,0A,F0 00 21 1D 01 01 0A 02 F7,Only if Ableton Live must run at the same time.
+set_aftertouch_channel,1E,F0 00 21 1D 01 01 1E 00 F7,Cuts pad pressure traffic.
+set_led_brightness,06,F0 00 21 1D 01 01 06 <0-127> F7,Hardware caps to 8 on USB power only.
+set_display_brightness,08,F0 00 21 1D 01 01 08 <lsb7> <msb1> F7,0-255 split as 7-bit LSB + 1-bit MSB. Send 0 to keep the display dark.
+set_palette_entry,03,F0 00 21 1D 01 01 03 <idx> <rL> <rM> <gL> <gM> <bL> <bM> <wL> <wM> F7,"Each 8-bit value split as 7-bit LSB then 1-bit MSB. 11 bytes of payload, one message per index."
+reapply_palette,05,F0 00 21 1D 01 01 05 F7,Send once after writing all palette entries.
+set_touchstrip_config,17,F0 00 21 1D 01 01 17 <flags> F7,"bit0 LED owner, bit1 sysex vs values, bit2 modwheel vs pitchbend, bit3 point vs bar, bit4 centre vs bottom, bit5 autoreturn, bit6 autoreturn target. Default 0x68."
+device_inquiry,--,F0 7E 7F 06 01 F7,"Standard MIDI, NOT the Ableton header. Reply confirms Push presence, firmware and serial."

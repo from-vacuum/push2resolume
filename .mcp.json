@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "envoy": {
+      "type": "stdio",
+      "command": "/Users/serhii_pichkurov/Desktop/Push2Resolume/.venv/bin/python3",
+      "args": [
+        "-u",
+        "/Users/serhii_pichkurov/Desktop/Push2Resolume/.embody/envoy-bridge.py",
+        "--port",
+        "9870",
+        "--config",
+        "/Users/serhii_pichkurov/Desktop/Push2Resolume/.embody/envoy.json"
+      ]
+    }
+  }
+}

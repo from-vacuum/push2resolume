@@ -1,0 +1,18 @@
+/Backup/*
+/logs/*
+
+/.embody/*
+
+# Ignore OS X files
+*.DS_Store
+
+## Python cache files
+**/__pycache__/
+**/.ipynb_checkpoints/
+**/.pytest_cache/
+**/.ruff_cache/
+
+
+## Python envs
+**/venv/
+**/.venv/

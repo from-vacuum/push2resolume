@@ -1,0 +1,107 @@
+# Push2Resolume
+
+## Current Surface: Seven Layers + Composition
+
+Session has seven clip rows (L7 at the top, L1 above the bottom row) and a
+bottom row of column launches. Each bank has eight clips; 16 banks retain
+access to positions1-128. Left/right changes banks; the right column selects
+within the current group of eight banks.
+
+In FX mode, columns are L1-L7 and Composition. Left/right or the first two
+right-column buttons select slots1-8 or9-16. Session toggles the grid mode.
+Lower buttons select targets; upper buttons clear, with Shift for solo (last
+button: disconnect all / Shift tempo resync). Mute controls Composition, or the target
+whose lower button is held. Shift+right-column selects decks1-8; up/down reaches
+all decks.
+
+Session encoders control all eight opacities. Mix toggles to per-target
+Dashboard link1 (Shift: link2). Shift on the opacity page controls the playing
+clip's speed in each layer, and Composition speed on encoder8. Speed is inert
+without an active clip. FX encoders control the focused target's Dashboard
+links1-8. Select applies fine adjustment to the active encoder parameter.
+
+Device resyncs state from Resolume and forces a full LED/LCD repaint. Pending
+writes and temporary encoder/FX feedback are discarded; mode, focus, pages,
+layer identity bindings and captured FX values stay intact. Controls are
+disarmed during the read. Failed reads show a warning and remain disarmed until
+fresh state arrives. Shift+Stop remains the explicit layer-identity rebind.
+
+Text LCD mode shows target names, encoder labels/values, clip playback, loaded
+slot counts, effect lists with opacity/bypass state, bank/page, focus, deck, BPM
+and master. Layout switches text/preview. Open
+[push2_live_overlay_v2.html](push2_live_overlay_v2.html) directly while TD is
+running for the live surface, LCD image and control inspector. State is served
+by TD on port9871. The original overlay redirects to v2.
+
+Editable embedded-DAT source is mirrored under `td/`. These files require an
+explicit Envoy update; they are not automatically externalized by Embody.
+`tools/generate_layout7.py` regenerates repeated CSV mappings while preserving
+other rig controls. `tools/build_deploy.py` prepares the Envoy source/config
+update. Never edit `externalizations.tsv` manually.
+
+Checks: `.venv/bin/python3 verify.py` and
+`.venv/bin/python3 -m unittest discover -s tests -v`.
+See [LAYOUT_7_PLUS_COMP_PLAN.md](LAYOUT_7_PLUS_COMP_PLAN.md) for the migration
+record. The old three-layer design below the current-revision note in
+DESIGN.md is historical. FX toggles are immediate; Select+pad captures current
+opacity. Fade ramps and hold-to-stab gestures remain out of scope.
+Capturing an off effect leaves its previous activation level unchanged;
+legacy zero activation levels are repaired to the configured default.
+FX LED/LCD feedback updates immediately. Resolume set acknowledgements can
+contain the previous value, so state verification uses delayed GET readbacks
+rather than those acknowledgements.
+
+Ableton Push 2 → TouchDesigner → Resolume Arena controller surface. See `DESIGN.md` for the full architecture, control mapping, and build order; `PHASE3A_FINDINGS.md` for live-hardware findings that corrected the original design's assumptions.
+
+## Push 2 Display Driver
+
+The 960×160 screen is **not MIDI** — it is a vendor-specific USB bulk endpoint, separate from the MIDI interface used for pads/encoders/LEDs. Per `DESIGN.md` §1/§9, display support is implemented as a **separate helper process** (`display/push2_display_helper.py`) that owns this USB endpoint, so a USB problem — or the Windows driver issue below — can never affect the live MIDI/LED/OSC/WebSocket rig.
+
+### USB identity (confirmed against live hardware 2026-09-09)
+
+| | |
+|---|---|
+| Vendor ID | `0x2982` |
+| Product ID | `0x1967` |
+| Interface | `0` (Vendor Specific, "Push 2 Display") |
+| Endpoint | `0x01`, Bulk OUT, 512-byte max packet |
+| Library | libusb-1.0, via `pyusb` on macOS |
+
+**The interface must be explicitly claimed** (`usb.util.claim_interface`). A bulk write that reports full success (no exception, correct byte count) without an explicit claim silently never reaches the screen — confirmed against physical hardware. The frame header must be written as its own bulk transfer, separate from the (chunked) pixel data.
+
+### Frame format
+
+Each frame = a 16-byte header, followed by 160 lines × 2048 bytes of pixel data (total 327,680 bytes), sent as bulk OUT transfers (typically chunked in ~16KB buffers per the manual, for transfer efficiency).
+
+**Header** (fixed):
+```
+FF CC AA 88  00 00 00 00  00 00 00 00  00 00 00 00
+```
+
+**Pixel data**: 160 lines, topmost first, leftmost pixel first per line. Each line is 2048 bytes = 1920 bytes of pixel data (960 pixels × 2 bytes) + 128 filler bytes (avoids a line boundary falling inside a 512-byte USB buffer).
+
+**Pixel encoding** — 16-bit RGB565, little-endian on the wire:
+
+| bit | 15-11 | 10-5 | 4-0 |
+|---|---|---|---|
+| field | B (5 bits) | G (6 bits) | R (5 bits) |
+
+**XOR obfuscation** — before sending, every line buffer (all 2048 bytes, including filler) is XORed with the repeating 4-byte pattern `E7 F3 E7 FF` (byte 0 XOR `0xE7`, byte 1 XOR `0xF3`, byte 2 XOR `0xE7`, byte 3 XOR `0xFF`, repeating).
+
+**Timing**: 60fps target. Frames are double-buffered; a late frame repeats the previous one. No frame within 2 seconds → display goes black.
+
+Source: [Ableton's Push 2 MIDI and Display Interface Manual](https://github.com/Ableton/push-interface) rev 1.1, cross-checked against a live device descriptor dump.
+
+### Windows
+
+A real Windows backend needs a **WinUSB driver bound to interface 0**, normally installed via [Zadig](https://zadig.akeo.ie/). This **replaces the driver Windows has bound to that interface**, which can conflict with Ableton Live's own use of the Push 2 display if Live is run on the same machine — reverting the binding is needed to hand the screen back to Live.
+
+**Current status: Windows uses a stub backend** (`_WindowsStub` in `push2_display_helper.py`) that no-ops and reports "unavailable." This keeps the cross-platform interface stable — a real WinUSB backend can be dropped in later without touching any calling code — while deferring the driver-conflict decision until there's a Windows machine to test against and a decision on how to handle Ableton Live coexistence. MIDI/LED/pad control is unaffected either way; only the physical screen stays dark on Windows for now.
+
+### Running the helper standalone
+
+```
+DYLD_LIBRARY_PATH=/opt/homebrew/opt/libusb/lib .venv/bin/python3 display/push2_display_helper.py
+```
+
+Requires `pyusb` (`pip install pyusb`, installed in `.venv`) and `libusb` (`brew install libusb` on macOS). Sends a solid red test frame, then (on Enter) an 8-bar color gradient — for confirming the physical display path independent of TouchDesigner.

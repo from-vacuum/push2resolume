@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Push 2 | Resolume</title>
+  <link rel="stylesheet" href="display/overlay.css">
+</head>
+<body>
+  <header><div><h1>Push 2 <span>/ Resolume</span></h1><p id="composition">Connecting</p></div><div class="connection"><i id="connectionDot"></i><span id="connection">Waiting for TD</span><button id="refresh" title="Refresh state" aria-label="Refresh state">&#8635;</button></div></header>
+  <main>
+    <div class="context"><strong id="mode">SESSION</strong><span id="page">Bank 1</span><span id="focus">L1</span><span id="tempo"></span><span id="deck"></span></div>
+    <section class="surface" aria-label="Push controller live state">
+      <div class="rail" id="leftRail"></div>
+      <div class="center">
+        <div class="encoders" id="encoders"></div>
+        <div class="buttonrow" id="upper"></div>
+        <img class="lcd" id="lcd" width="960" height="160" alt="Live Push LCD text display">
+        <div class="buttonrow" id="lower"></div>
+        <div class="gridarea"><div class="pads" id="pads"></div><div class="bankbuttons" id="right"></div></div>
+        <div class="tracknames" id="tracknames"></div>
+      </div>
+      <div class="rail" id="rightRail"></div>
+    </section>
+    <div class="metrics" id="metrics"></div>
+    <p class="error" id="error" role="status"></p>
+    <section class="targets" aria-label="Layer status"><div class="tablehead"><span>Target</span><span>Playing</span><span>Opacity</span><span>Clips</span><span>FX</span></div><div id="targets"></div></section>
+  </main>
+  <dialog id="detail"><div class="dialoghead"><h2 id="detailTitle">Control</h2><button id="close" aria-label="Close">&#215;</button></div><dl id="detailFields"></dl></dialog>
+  <script src="display/overlay.js"></script>
+</body>
+</html>

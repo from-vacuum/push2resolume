@@ -1,0 +1,29 @@
+palette_index,name,r,g,b,w,purpose
+0,OFF,0,0,0,0,"LED fully off. Push default index 0, never overwritten."
+16,L1_DIM,40,17,0,18,"Layer 1 amber - clip present, idle"
+17,L1_MID,120,52,0,55,Layer 1 amber - focused / previewed
+18,L1_FULL,255,110,0,127,Layer 1 amber - clip connected
+19,L2_DIM,40,0,22,18,"Layer 2 magenta - clip present, idle"
+20,L2_MID,120,0,66,55,Layer 2 magenta - focused / previewed
+21,L2_FULL,255,0,140,127,Layer 2 magenta - clip connected
+22,L3_DIM,0,28,40,18,"Layer 3 cyan - clip present, idle"
+23,L3_MID,0,85,120,55,Layer 3 cyan - focused / previewed
+24,L3_FULL,0,180,255,127,Layer 3 cyan - clip connected
+25,COMP_DIM,30,30,30,18,Composition / global - idle
+26,COMP_MID,100,100,100,55,Composition / global - focused
+27,COMP_FULL,255,255,255,127,Composition / global - active
+28,WARN,255,0,0,127,Layer bypassed / blackout / recording / panic
+29,OK,0,255,60,110,BPM clock running / confirmed
+30,SOLO,255,220,0,120,Solo engaged
+31,SCENE_FULL,150,60,255,100,Column / scene pad active
+32,SCENE_DIM,34,14,60,20,Column / scene pad idle
+33,DECK_FULL,0,255,200,120,Selected deck
+34,DECK_DIM,0,50,40,20,Unselected deck
+35,FX_OFF,0,45,22,18,"FX present, opacity 0 - the pad is loaded and ready"
+36,FX_MID,0,140,70,60,"FX present, opacity between 0 and on_value, or mid-ramp"
+37,FX_ON,0,255,120,110,"FX present, opacity at or above on_value"
+38,FX_BYPASSED,80,20,0,20,FX present but hard-bypassed out of the render chain
+39,BANK_FULL,255,255,140,127,Selected clip bank
+40,BANK_DIM,50,50,28,20,Unselected clip bank
+41,WHITE_DIM,60,60,60,32,"White-only button, idle"
+42,WHITE_FULL,255,255,255,127,"White-only button, active"

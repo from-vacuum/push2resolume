@@ -1,0 +1,38 @@
+target,slot,pin_key,last_display_name,on_value,last_seen_iso,notes
+COMPOSITION,1,COMPOSITION|ShiftGlitch|1,Shift Glitch,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,2,COMPOSITION|HueRotate|1,Hue Rotate,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,3,COMPOSITION|Strobe|1,Strobe,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,4,COMPOSITION|TwitchEffect|1,Twitch,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,6,COMPOSITION|Dilate|1,Dilate,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,7,COMPOSITION|Colorize|1,Colorize,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,8,COMPOSITION|Flip|1,Flip,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,9,COMPOSITION|Recolour|1,Recolor,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,10,COMPOSITION|NoisyEffect|1,Noisy,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,11,COMPOSITION|Fragment|1,Fragment,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,1,LAYER1|LinearCloner|1,Linear Cloner,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,2,LAYER1|Acuarela|1,Acuarela,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,3,LAYER1|Goo|1,Goo,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,4,LAYER1|WaveWarp|1,Wave Warp,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,5,LAYER1|WarpSpeed|1,WarpSpeed,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,6,LAYER1|InfiniteZoom|1,Infinite Zoom,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,7,LAYER1|AutoMask|1,Auto Mask,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,12,COMPOSITION|Ripples|1,Ripples,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+COMPOSITION,13,COMPOSITION|EdgeDetection|1,Edge Detection,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER1,8,LAYER1|RoundMask|1,RoundMask,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,1,LAYER6|Terrain|1,Terrain,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,2,LAYER6|Ripples|1,Ripples,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,3,LAYER6|Mirror|1,Mirror,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,4,LAYER6|Reveal|1,Reveal,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,5,LAYER6|AutoMask|1,Auto Mask,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,6,LAYER6|RadialCloner|1,Radial Cloner,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,7,LAYER6|SearchLight|1,SearchLight,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,8,LAYER6|ShiftRGB|1,Shift RGB,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER6,9,LAYER6|Slide|1,Slide,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,1,LAYER7|AutoMask|1,Auto Mask,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,2,LAYER7|Twisted|1,Twisted,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,3,LAYER7|Suckr|1,Suckr,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,4,LAYER7|Ripples|1,Ripples,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,5,LAYER7|RadialBlur|1,RadialBlur,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,6,LAYER7|Vignette|1,Vignette,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,7,LAYER7|ParticleSystem|1,Particle System,1.0,2026-09-09T01:20:42,opacity via params.Opacity
+LAYER7,8,LAYER7|InvertRGB|1,Invert RGB,1.0,2026-09-09T01:20:42,opacity via params.Opacity
