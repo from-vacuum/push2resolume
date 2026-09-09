@@ -9,6 +9,8 @@ Frame format source: Ableton's "Push 2 MIDI and Display Interface Manual"
 descriptor dump on 2026-09-09 (interface 0, "Push 2 Display", bulk OUT 0x01).
 """
 
+import glob
+import os
 import sys
 import struct
 import socket
@@ -81,16 +83,47 @@ def gradient_frame():
 
 WRITE_CHUNK_BYTES = 16384  # manual: "typically sent using larger buffers, e.g. 16kbytes each"
 
+LIBUSB_DIR_ENV = "PUSH2_LIBUSB_DIR"
+LIBUSB_DLL_NAME = "libusb-1.0.dll"
 
-class _MacBackend:
-    """Real backend: pyusb + libusb on macOS.
+
+def _libusb_dll_candidates():
+    """Windows libusb-1.0.dll search order, most explicit first.
+
+    TouchDesigner ships libusb-1.0.dll in its own bin folder, so the rig never
+    needs a separate libusb install -- but the TD version is IN that path, so a
+    TD upgrade would break a pinned one. TD passes its live app.binFolder via
+    PUSH2_LIBUSB_DIR (see mod_display.StartHelper); the glob is only the
+    fallback for standalone runs with no TD to ask.
+    """
+    directory = os.environ.get(LIBUSB_DIR_ENV, "").strip()
+    if directory:
+        yield os.path.join(directory, LIBUSB_DLL_NAME)
+    for program_files in (r"C:\Program Files", r"C:\Program Files (x86)"):
+        pattern = os.path.join(program_files, "Derivative", "TouchDesigner*", "bin", LIBUSB_DLL_NAME)
+        # Newest install first: 2025.32820 sorts above 2023.x lexically.
+        for hit in sorted(glob.glob(pattern), reverse=True):
+            yield hit
+
+
+def find_libusb_dll():
+    for candidate in _libusb_dll_candidates():
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+class _LibUsbBackend:
+    """Shared real backend: pyusb over libusb. Subclasses only decide how the
+    libusb library itself is located; every USB step below is identical on both
+    platforms and deliberately lives in ONE place.
 
     The interface must be claimed explicitly and the header must be written
     as its own bulk transfer, separate from the (chunked) pixel data -- a
     single write() covering header+pixels without an explicit claim_interface
     call reports full success (no exception, correct byte count) but the
     device silently never updates the screen. Confirmed against physical
-    hardware on 2026-09-09.
+    hardware on 2026-09-09 (macOS) and 2026-09-09 (Windows/WinUSB).
     """
 
     def __init__(self):
@@ -99,15 +132,28 @@ class _MacBackend:
 
         self._usb_core = usb.core
         self._usb_util = usb.util
-        dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+        backend = self._open_library()
+        dev = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID, backend=backend)
         if dev is None:
             raise RuntimeError("Push 2 not found on USB (display interface)")
-        dev.set_configuration()
+        try:
+            dev.set_configuration()
+        except (usb.core.USBError, NotImplementedError) as e:
+            # WinUSB owns only interface 0 of this composite device and refuses
+            # a device-wide SET_CONFIGURATION; the config is already active, so
+            # this is informational, not fatal. macOS needs the call to succeed.
+            if not sys.platform.startswith("win"):
+                raise
+            print(f"[push2_display_helper] set_configuration skipped ({e})")
         cfg = dev.get_active_configuration()
         intf = cfg[(INTERFACE, 0)]
         usb.util.claim_interface(dev, intf)
         self._dev = dev
         self._intf = intf
+
+    def _open_library(self):
+        """Return an explicit pyusb backend, or None to use pyusb's own search."""
+        return None
 
     def send_frame(self, payload):
         header, pixels = payload[:16], payload[16:]
@@ -120,13 +166,44 @@ class _MacBackend:
         self._usb_util.dispose_resources(self._dev)
 
 
-class _WindowsStub:
-    """Stub backend: no-op. A real WinUSB backend can replace this without
-    touching any caller -- see README.md for why Windows isn't implemented yet.
+class _MacBackend(_LibUsbBackend):
+    """macOS: libusb comes from Homebrew, found via DYLD_LIBRARY_PATH which
+    mod_display.StartHelper sets from display_helper_libusb_dir_darwin."""
+
+
+class _WindowsBackend(_LibUsbBackend):
+    """Windows: libusb talks to the WinUSB driver bound to interface 0.
+
+    ctypes' find_library() does NOT search PATH the way the POSIX loader does,
+    so pyusb's default lookup returns no backend even with the DLL one folder
+    away -- get_backend() must be handed the resolved path explicitly. A None
+    backend here is what made pyusb report 'No backend available' rather than
+    anything about the driver.
+    """
+
+    def _open_library(self):
+        import usb.backend.libusb1
+
+        dll = find_libusb_dll()
+        if dll is None:
+            raise RuntimeError(
+                f"{LIBUSB_DLL_NAME} not found -- set {LIBUSB_DIR_ENV} to the folder holding it "
+                f"(TouchDesigner's bin folder ships one)")
+        backend = usb.backend.libusb1.get_backend(find_library=lambda _name: dll)
+        if backend is None:
+            raise RuntimeError(f"libusb failed to load from {dll} (architecture mismatch?)")
+        return backend
+
+
+class _StubBackend:
+    """No-op backend: accepts frames and drops them. Used by --stub for
+    running the TCP half on a machine with no Push 2 attached (CI, a dev box,
+    or while the WinUSB driver is unbound). Never selected automatically --
+    a real backend failure must surface as an error, not a dark screen.
     """
 
     def __init__(self):
-        print("[push2_display_helper] Push 2 display disabled on this platform (stub)")
+        print("[push2_display_helper] stub backend: frames accepted and discarded")
 
     def send_frame(self, payload):
         pass
@@ -136,8 +213,10 @@ class _WindowsStub:
 
 
 def make_backend(force_stub=False):
-    if force_stub or sys.platform.startswith("win"):
-        return _WindowsStub()
+    if force_stub:
+        return _StubBackend()
+    if sys.platform.startswith("win"):
+        return _WindowsBackend()
     return _MacBackend()
 
 

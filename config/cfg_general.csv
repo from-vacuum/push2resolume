@@ -1,6 +1,6 @@
 key,value,notes
 resolume_ip,127.0.0.1,Resolume host. Set to the other machine IP for a 2-box rig.
-resolume_osc_out_port,6998,"Resolume Preferences > OSC > input port. Confirmed live on this machine as 6998, not the 7000 default."
+resolume_osc_out_port,6998,"Resolume Preferences > OSC > input port. Must match Arena's bound UDP port exactly -- OSC is fire-and-forget UDP, so a mismatch fails SILENTLY (TD reports sends fine, Resolume never reacts). Verify with: netstat -ano -p UDP | grep <Arena-PID>."
 resolume_osc_in_port,7001,Only used if the OSC feedback path is ever enabled. Off by default.
 resolume_web_port,8080,Resolume Preferences > Webserver. Serves both REST and WebSocket.
 state_source,websocket,websocket | rest_poll | none.
@@ -31,8 +31,9 @@ push_display_brightness,255,"SysEx 08. Phase 6: display helper now sends real fr
 display_helper_script,display/push2_display_helper.py,Standalone process owning the Push 2 display USB endpoint. Never imported into TD -- see README.md.
 display_helper_port,9872,"Loopback TCP port between TD (client, net_display) and the helper (server). NOT 9871 -- that's net/webserver1, already in use for the live-overlay HTML pages."
 display_helper_python_darwin,.venvs/macos-arm64/bin/python3,macOS arm64 interpreter with pyusb installed.
-display_helper_python_win32,.venv/Scripts/python.exe,"Unused while Windows runs the display stub, but keeps the row symmetric with the MIDI device names above."
+display_helper_python_win32,.venvs/windows-amd64/Scripts/python.exe,"Windows amd64 interpreter with pyusb installed (tools/bootstrap_env.py creates it). NOT .venv -- that one is built from TD's own bin python and has no packages."
 display_helper_libusb_dir_darwin,/opt/homebrew/opt/libusb/lib,StartHelper sets DYLD_LIBRARY_PATH to this so pyusb's libusb1 backend loads. brew install libusb if missing.
+display_helper_libusb_dir_win32,,"Folder holding libusb-1.0.dll. Blank = use TouchDesigner's own app.binFolder, which ships one -- set explicitly only to override. StartHelper passes it as PUSH2_LIBUSB_DIR; ctypes find_library() ignores PATH on Windows, so the helper needs the resolved folder."
 push_aftertouch_mode,0,SysEx 1E. 0 = channel pressure (less traffic).
 push_touchstrip_config,0x10,"SysEx 17. Bar from centre, no autoreturn, pitch bend. 0x00 = bar from bottom."
 push_in_name_darwin,Ableton Push 2 User Port,CoreMIDI. MUST be the User Port.

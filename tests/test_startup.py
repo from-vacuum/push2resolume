@@ -15,20 +15,60 @@ class StartupTests(unittest.TestCase):
     def setUp(self):
         self.run = Mock()
         self.net = SimpleNamespace(par=SimpleNamespace(active=1))
+        # Spout/Syphon In TOPs, publishing the Windows-flavoured sender names.
+        self.sources = {
+            'display/syphonspoutin1': SimpleNamespace(par=SimpleNamespace(sendername=Mock(
+                menuNames=['Arena - Composition', 'Arena - Preview'],
+                eval=Mock(return_value='Arena:Preview')))),
+            'display/syphonspoutin2': SimpleNamespace(par=SimpleNamespace(sendername=Mock(
+                menuNames=['Arena - Composition', 'Arena - Preview'],
+                eval=Mock(return_value='Arena:Composition')))),
+        }
         self.owner = Mock()
-        self.owner.op.return_value = self.net
+        self.owner.op.side_effect = lambda path: self.sources.get(path, self.net)
         self.owner.fetch.return_value = {}
         # Exercise lifecycle without importing TD's NumPy/OpenCV renderer.
+        # Module-level Assigns come along so constants stay in sync with the
+        # source (a stub numpy satisfies the one that builds an array); the
+        # Import nodes are deliberately left out.
         tree = ast.parse((ROOT / 'td/display/mod_display.py').read_text())
         node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Display')
+        constants = [n for n in tree.body if isinstance(n, ast.Assign)]
         self.globals = dict(os=os, sys=sys, subprocess=subprocess, run=self.run,
-                            project=SimpleNamespace(folder=str(ROOT)), debug=Mock())
-        exec(compile(ast.Module(body=[node], type_ignores=[]), '<Display>', 'exec'), self.globals)
+                            project=SimpleNamespace(folder=str(ROOT)), debug=Mock(),
+                            app=SimpleNamespace(binFolder='C:/Program Files/Derivative/TD/bin'),
+                            np=Mock())
+        exec(compile(ast.Module(body=constants + [node], type_ignores=[]), '<Display>', 'exec'),
+             self.globals)
         self.display = self.globals['Display'](self.owner)
         self.display.Cfg = lambda key, default=None, cast=str: {
             'display_helper_python_darwin': '.venvs/macos-arm64/bin/python3',
             'display_helper_python_win32': '.venvs/windows-amd64/Scripts/python.exe',
         }.get(key, default)
+
+    def test_windows_helper_gets_libusb_folder_and_platform_sender_names(self):
+        """Windows needs libusb handed over explicitly (ctypes ignores PATH),
+        and Spout sender names differ from Syphon's -- both fail silently."""
+        process = Mock()
+        process.poll.return_value = None
+        with patch.object(sys, 'platform', 'win32'):
+            with patch.object(subprocess, 'Popen', return_value=process) as popen:
+                self.display.StartHelper()
+        env = popen.call_args.kwargs['env']
+        self.assertEqual(env['PUSH2_LIBUSB_DIR'],
+                         os.path.normpath('C:/Program Files/Derivative/TD/bin'))
+        self.assertEqual(self.sources['display/syphonspoutin2'].par.sendername.val,
+                         'Arena - Composition')
+        self.assertEqual(self.sources['display/syphonspoutin1'].par.sendername.val,
+                         'Arena - Preview')
+
+    def test_resolved_sender_name_is_left_alone(self):
+        for source in self.sources.values():
+            source.par.sendername.eval.return_value = 'Arena - Preview'
+        self.display.EnsureTextureSources()
+        for source in self.sources.values():
+            self.assertNotIsInstance(source.par.sendername.val, str)
+        self.owner.op.return_value = self.net
 
     def test_helper_paths_are_project_relative_and_tcp_is_rearmed(self):
         process = Mock()

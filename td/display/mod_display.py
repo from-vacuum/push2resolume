@@ -25,6 +25,9 @@ _XOR_PATTERN_NP = np.frombuffer(XOR_PATTERN, dtype=np.uint8)
 
 _FIT_TOGGLE = ('fithorz', 'fitvert')
 
+# switch1 index 0 -> composition, index 1 -> preview (see ToggleSource).
+_TEXTURE_SOURCES = (('syphonspoutin2', 'composition'), ('syphonspoutin1', 'preview'))
+
 
 def RenderLCD(snapshot):
 	"""Native 960x160 RGB pixels; eight columns align with the physical encoders."""
@@ -162,10 +165,41 @@ class Display:
 		it (Phase 6e)."""
 		return self.process is not None and self.process.poll() is None
 
+	def EnsureTextureSources(self):
+		"""Bind each Spout/Syphon In TOP to whatever Arena is actually publishing.
+
+		Sender naming is platform-dependent: Syphon on macOS publishes
+		'Arena:Composition', Spout on Windows publishes 'Arena - Composition'.
+		A name hardcoded for one platform silently yields a 128x128 black
+		placeholder on the other -- the TOP reports no error, it simply never
+		receives (confirmed live on Windows 2026-09-09). Matching the role
+		suffix against the live sender list covers both conventions and also
+		survives an Arena rename ('Arena 7 - Preview') with no config edit.
+
+		A name that already resolves is left alone. Called from StartHelper so
+		every start and every Refresh-driven recovery re-resolves; Arena
+		launched AFTER TouchDesigner therefore needs one Refresh pulse.
+		"""
+		for name, role in _TEXTURE_SOURCES:
+			top = self.ownerComp.op('display/' + name)
+			if top is None:
+				continue
+			sender = top.par.sendername
+			available = list(sender.menuNames or ())
+			if sender.eval() in available:
+				continue
+			match = next((s for s in available if s.strip().lower().endswith(role)), None)
+			if match is None:
+				debug('Display: no %s sender published; available=%s' % (role, available or 'none'))
+				continue
+			debug('Display: %s -> %r (was %r)' % (name, match, sender.eval()))
+			sender.val = match
+
 	def StartHelper(self):
 		"""Launch the helper subprocess, then arm the TCP client a bit later
 		so the helper's listening socket is up first."""
 		self._stopping = False
+		self.EnsureTextureSources()
 		if self.IsHelperAlive():
 			if not self.connected:
 				self._queueConnect()
@@ -182,6 +216,14 @@ class Display:
 			libusb_dir = self.Cfg('display_helper_libusb_dir_darwin', '')
 			if libusb_dir:
 				env['DYLD_LIBRARY_PATH'] = libusb_dir
+		else:
+			# Windows: ctypes' find_library() does not search PATH, so pyusb
+			# cannot locate libusb-1.0.dll on its own. Hand the helper the
+			# resolved folder -- app.binFolder tracks the RUNNING TD, so this
+			# survives a TD upgrade that a pinned version path would not.
+			libusb_dir = self.Cfg('display_helper_libusb_dir_win32', '') or app.binFolder
+			if libusb_dir:
+				env['PUSH2_LIBUSB_DIR'] = os.path.normpath(libusb_dir)
 		try:
 			self.process = subprocess.Popen(
 				[python_path, script_path, '--serve', str(port)], env=env, cwd=project.folder)

@@ -108,7 +108,7 @@ The 960×160 screen is **not MIDI** — it is a vendor-specific USB bulk endpoin
 | Product ID | `0x1967` |
 | Interface | `0` (Vendor Specific, "Push 2 Display") |
 | Endpoint | `0x01`, Bulk OUT, 512-byte max packet |
-| Library | libusb-1.0, via `pyusb` on macOS |
+| Library | libusb-1.0, via `pyusb` — Homebrew libusb on macOS, WinUSB + TD's bundled `libusb-1.0.dll` on Windows |
 
 **The interface must be explicitly claimed** (`usb.util.claim_interface`). A bulk write that reports full success (no exception, correct byte count) without an explicit claim silently never reaches the screen — confirmed against physical hardware. The frame header must be written as its own bulk transfer, separate from the (chunked) pixel data.
 
@@ -137,17 +137,34 @@ Source: [Ableton's Push 2 MIDI and Display Interface Manual](https://github.com/
 
 ### Windows
 
-A real Windows backend needs a **WinUSB driver bound to interface 0**, normally installed via [Zadig](https://zadig.akeo.ie/). This **replaces the driver Windows has bound to that interface**, which can conflict with Ableton Live's own use of the Push 2 display if Live is run on the same machine — reverting the binding is needed to hand the screen back to Live.
+The Windows backend is **live** (`_WindowsBackend` in `push2_display_helper.py`), driving the screen through the **WinUSB driver bound to interface 0**. Confirmed against physical hardware on 2026-09-09: 30 fps sustained, 9.8 MB/s, no dropped transfers.
 
-**Current status: Windows uses a stub backend** (`_WindowsStub` in `push2_display_helper.py`) that no-ops and reports "unavailable." This keeps the cross-platform interface stable — a real WinUSB backend can be dropped in later without touching any calling code — while deferring the driver-conflict decision until there's a Windows machine to test against and a decision on how to handle Ableton Live coexistence. MIDI/LED/pad control is unaffected either way; only the physical screen stays dark on Windows for now.
+Three Windows-specific things, each of which fails *silently* if wrong:
+
+1. **WinUSB must be bound to interface 0**, normally via [Zadig](https://zadig.akeo.ie/) (select the composite child "Push 2 Display" / `MI_00`, install WinUSB). Verify with:
+   ```
+   powershell "Get-PnpDevice | ? InstanceId -like '*VID_2982*' | fl Status,Class,FriendlyName,InstanceId"
+   ```
+   The display child should read `Class: USBDevice` (the WinUSB setup class); its `DEVPKEY_Device_Service` should be `WinUSB`. **Interface 1 (`MI_01`, `Class: MEDIA`) is the MIDI side and must be left alone** — rebinding that would kill pads, encoders and LEDs.
+2. **`libusb-1.0.dll` must be handed over explicitly.** On Windows `ctypes.util.find_library()` does *not* search `PATH`, so pyusb's default lookup returns **no backend** even with the DLL one folder away — the symptom is "No backend available", which reads like a driver problem but isn't. TouchDesigner ships the DLL in its own `bin` folder, so no separate libusb install is needed: `mod_display.StartHelper` passes the live `app.binFolder` as `PUSH2_LIBUSB_DIR` (config key `display_helper_libusb_dir_win32` overrides). Deriving it from the running TD keeps it correct across TD upgrades, which a pinned `TouchDesigner.2025.32820` path would not.
+3. **`SET_CONFIGURATION` is refused** on a composite device where WinUSB owns only one interface. The config is already active, so the helper logs and continues on Windows; on macOS the call must still succeed.
+
+**Ableton Live coexistence:** the WinUSB binding replaces whatever driver Windows had on interface 0, so Live cannot drive the Push 2 screen while it is in place — reverting the binding in Device Manager hands the screen back. MIDI is unaffected either way. Only one process may hold the display at a time: the helper claims the interface exclusively, and a second claim fails with `[Errno 13] Access denied`.
+
+**Spout vs Syphon sender names:** Arena publishes `Arena - Composition` / `Arena - Preview` through Spout on Windows, but `Arena:Composition` / `Arena:Preview` through Syphon on macOS. A name hardcoded for one platform yields a silent 128×128 black placeholder on the other — no error on the TOP. `Display.EnsureTextureSources()` resolves this at every `StartHelper` by matching the role suffix against the live sender list, which also survives an Arena rename. Arena started *after* TouchDesigner therefore needs one Refresh pulse to pick up its senders.
 
 ### Running the helper standalone
 
-```
+```sh
+# macOS
 DYLD_LIBRARY_PATH=/opt/homebrew/opt/libusb/lib .venvs/macos-arm64/bin/python3 display/push2_display_helper.py
+# Windows (PUSH2_LIBUSB_DIR is optional -- the helper globs Derivative installs as a fallback)
+.venvs/windows-amd64/Scripts/python.exe display/push2_display_helper.py
 ```
 
-Requires `pyusb` (installed in `.venvs/macos-arm64`) and `libusb` (`brew install libusb` on macOS). Sends a solid red test frame, then (on Enter) an 8-bar color gradient — for confirming the physical display path independent of TouchDesigner.
+Requires `pyusb` (installed by `tools/bootstrap_env.py`) plus libusb — `brew install libusb` on macOS, TD's bundled DLL on Windows. Sends a solid red test frame, then (on Enter) an 8-bar color gradient — for confirming the physical display path independent of TouchDesigner. Add `--stub` to exercise the TCP half with no Push 2 attached; the stub is never selected automatically, so a real backend failure surfaces as an error rather than a dark screen.
+
+Note the display blanks itself if no frame arrives within 2 seconds, so a single one-shot frame flashes and vanishes — stream to watch it.
 
 The existing macOS environment lives in `.venvs/macos-arm64`. The `.venv`
 symlink is a compatibility alias for older saved TD projects and commands,
