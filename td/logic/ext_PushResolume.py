@@ -19,6 +19,7 @@ class PushResolumeExt:
 		}
 		self.Armed = False
 		self._pollFrameAcc = 0
+		self._bootPending = False
 
 	def onInitTD(self):
 		run("args[0]._postInit()", self, delayFrames=5)
@@ -65,6 +66,8 @@ class PushResolumeExt:
 		self.Health['push_bound'] = bool(self.PushIO and self.PushIO.Bound)
 		self.Health['push_mode'] = bool(self.PushIO and self.PushIO.PushMode)
 		self.Health['osc_target'] = True
+		if self._bootPending:
+			self.Boot()
 
 	def onDestroyTD(self):
 		pass
@@ -72,9 +75,11 @@ class PushResolumeExt:
 	def Boot(self):
 		"""Full startup sequence (DESIGN.md 5). Deferred call from exec_boot.onStart."""
 		if self.PushIO is None:
-			debug('PushResolumeExt.Boot: PushIO not initialized')
+			self._bootPending = True
 			return
+		self._bootPending = False
 		self.PushIO.Boot()
+		self.PushIO.InvalidateLeds()
 		self.Health['push_bound'] = self.PushIO.Bound
 		self.Health['push_mode'] = self.PushIO.PushMode
 		self.Health['osc_target'] = True
@@ -94,9 +99,10 @@ class PushResolumeExt:
 			self.PushIO.Panic()
 		if self.ResolumeState is not None:
 			self.ResolumeState.Request(self)
-		if self.Display is not None and self.Display.process is None:
+		if self.Display is not None:
 			self.Display.StartHelper()
 		self.FullRedraw()
+		self.CheckHealth()
 
 	def Resync(self):
 		"""Device: replace optimistic state with a fresh read, without controlling Resolume."""
@@ -115,6 +121,10 @@ class PushResolumeExt:
 				entry['_pending_until'] = 0
 		self._pollFrameAcc = 0
 		state.Request(self)
+
+	def Refresh(self):
+		"""Full runtime rebuild from the component's Refresh pulse or Textport."""
+		self.ownerComp.op('logic/parexec_refresh').module.refresh(self.ownerComp)
 
 	def FinishResync(self, error=''):
 		state = self.ResolumeState
@@ -140,6 +150,8 @@ class PushResolumeExt:
 
 	def CheckHealth(self):
 		h = self.Health
+		h['push_bound'] = bool(self.PushIO and self.PushIO.Bound)
+		h['push_mode'] = bool(self.PushIO and self.PushIO.PushMode)
 		h['fx_registry'] = bool(self.FxRegistry and len(self.FxRegistry.Registry) > 0)
 		if self.ResolumeState is not None:
 			h['layers_ok'] = self.ResolumeState.LayerIdsOK()

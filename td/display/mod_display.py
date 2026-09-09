@@ -140,6 +140,8 @@ class Display:
 		self.ownerComp = ownerComp
 		self.process = None
 		self.connected = False
+		self._stopping = False
+		self._connectGeneration = 0
 		self.mode = ownerComp.fetch('layout7_ui', {}, search=False).get('display', 'text')
 
 	def Cfg(self, key, default=None, cast=str):
@@ -163,12 +165,17 @@ class Display:
 	def StartHelper(self):
 		"""Launch the helper subprocess, then arm the TCP client a bit later
 		so the helper's listening socket is up first."""
+		self._stopping = False
 		if self.IsHelperAlive():
+			if not self.connected:
+				self._queueConnect()
 			return
 		self.process = None
+		self.connected = False
+		self._net().par.active = 0
 		plat = 'win32' if sys.platform.startswith('win') else 'darwin'
-		python_path = self.Cfg('display_helper_python_' + plat, sys.executable)
-		script_path = project.folder + '/' + self.Cfg('display_helper_script', 'display/push2_display_helper.py')
+		python_path = os.path.normpath(os.path.join(project.folder, self.Cfg('display_helper_python_' + plat, sys.executable)))
+		script_path = os.path.normpath(os.path.join(project.folder, self.Cfg('display_helper_script', 'display/push2_display_helper.py')))
 		port = self.Cfg('display_helper_port', 9871, int)
 		env = os.environ.copy()
 		if plat == 'darwin':
@@ -177,15 +184,32 @@ class Display:
 				env['DYLD_LIBRARY_PATH'] = libusb_dir
 		try:
 			self.process = subprocess.Popen(
-				[python_path, script_path, '--serve', str(port)], env=env)
+				[python_path, script_path, '--serve', str(port)], env=env, cwd=project.folder)
 		except OSError as e:
 			debug('Display.StartHelper failed:', e)
 			return
-		run("args[0].par.active = 1", self._net(), delayFrames=30)
+		self._queueConnect()
+
+	def _queueConnect(self):
+		# TD must cook with active=0 before reopening a saved/stale TCP client.
+		self._connectGeneration += 1
+		self.connected = False
+		self._net().par.active = 0
+		run("args[0]._connect(args[1])", self, self._connectGeneration, delayFrames=30)
+
+	def _connect(self, generation):
+		if self._stopping or generation != self._connectGeneration:
+			return
+		if self.IsHelperAlive():
+			self._net().par.active = 1
+		else:
+			self.StartHelper()
 
 	def StopHelper(self):
 		"""Delayed-quit companion to PushResolumeExt.CloseProject -- called
 		before the MIDI teardown so nothing hangs waiting on this process."""
+		self._stopping = True
+		self._connectGeneration += 1
 		net = self._net()
 		if net is not None:
 			net.par.active = 0
@@ -195,6 +219,8 @@ class Display:
 			self.process = None
 
 	def OnConnect(self):
+		if self._stopping:
+			return
 		self.connected = True
 
 	def OnClose(self):
@@ -204,18 +230,16 @@ class Display:
 		recovery is automatic a beat later so a brief blip doesn't spam
 		relaunches (Phase 6e)."""
 		self.connected = False
-		run("args[0]._attemptReconnect()", self, delayFrames=90)
+		if not self._stopping:
+			run("args[0]._attemptReconnect()", self, delayFrames=90)
 
 	def _attemptReconnect(self):
-		if self.connected:
+		if self._stopping or self.connected:
 			return  # a newer connection already landed; don't undo it
 		if not self.IsHelperAlive():
 			self.StartHelper()
 			return
-		net = self._net()
-		if net is not None:
-			net.par.active = 0
-			net.par.active = 1
+		self._queueConnect()
 
 	def SendFrame(self, payload):
 		net = self._net()

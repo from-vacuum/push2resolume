@@ -30,7 +30,7 @@ push_led_brightness,100,SysEx 06. Hardware caps this to 8 if Push runs on USB po
 push_display_brightness,255,"SysEx 08. Phase 6: display helper now sends real frames, so brightness is on. 0 = deliberately dark (pre-Phase-6 default)."
 display_helper_script,display/push2_display_helper.py,Standalone process owning the Push 2 display USB endpoint. Never imported into TD -- see README.md.
 display_helper_port,9872,"Loopback TCP port between TD (client, net_display) and the helper (server). NOT 9871 -- that's net/webserver1, already in use for the live-overlay HTML pages."
-display_helper_python_darwin,.venv/bin/python3,Interpreter with pyusb installed.
+display_helper_python_darwin,.venvs/macos-arm64/bin/python3,macOS arm64 interpreter with pyusb installed.
 display_helper_python_win32,.venv/Scripts/python.exe,"Unused while Windows runs the display stub, but keeps the row symmetric with the MIDI device names above."
 display_helper_libusb_dir_darwin,/opt/homebrew/opt/libusb/lib,StartHelper sets DYLD_LIBRARY_PATH to this so pyusb's libusb1 backend loads. brew install libusb if missing.
 push_aftertouch_mode,0,SysEx 1E. 0 = channel pressure (less traffic).

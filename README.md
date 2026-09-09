@@ -1,5 +1,29 @@
 # Push2Resolume
 
+## Environment Setup
+
+With Python 3.11+ and `uv` on PATH, run:
+
+```sh
+# macOS
+python3 tools/bootstrap_env.py
+# Windows
+python tools/bootstrap_env.py
+```
+
+The script selects `.venvs/macos-arm64`, `.venvs/macos-x86_64`,
+`.venvs/windows-amd64`, or `.venvs/windows-arm64` using the running Python's
+platform/architecture. It creates the environment with that Python, installs
+`requirements.txt`, checks dependencies and imports, and prints the interpreter
+path. No activation is required. Rerunning installs missing dependencies without
+replacing the existing environment or removing extra packages.
+
+Use `--dry-run` to preview commands. Project paths are resolved relative to the
+script, so it also works when invoked by absolute path from another directory.
+It does not modify `.toe` files or install native USB drivers/libusb. Use the
+printed path for the matching `display_helper_python_*` TD setting; a copied
+saved project may still contain an older embedded interpreter setting.
+
 ## Current Surface: Seven Layers + Composition
 
 Session has seven clip rows (L7 at the top, L1 above the bottom row) and a
@@ -32,6 +56,19 @@ layer identity bindings and captured FX values stay intact. Controls are
 disarmed during the read. Failed reads show a warning and remain disarmed until
 fresh state arrives. Shift+Stop remains the explicit layer-identity rebind.
 
+For full recovery, pulse `Refresh` on `/project1/PUSH_RESOLUME` (or call
+`op('/project1/PUSH_RESOLUME').Refresh()` in the Textport). This rebuilds the
+extensions and helpers, reinitializes Push, restarts the LCD helper, reconnects
+Resolume, and replaces cached state and LED feedback. View, focus, pages and
+FX pins are preserved. The Textport prints progress, individual checks and
+`SUCCESS` or `FAILED`; connection checks wait up to roughly eight seconds.
+Push status confirms MIDI binding and the mode command, not a hardware ACK.
+The last result is available via the component's `refresh_status` storage.
+
+LCD startup explicitly closes the saved TCP client before reconnecting on a
+later frame. Helper paths are resolved relative to the project folder, and
+shutdown cancels pending reconnects so closing the project cannot respawn it.
+
 Text LCD mode shows target names, encoder labels/values, clip playback, loaded
 slot counts, effect lists with opacity/bypass state, bank/page, focus, deck, BPM
 and master. Layout switches text/preview. Open
@@ -45,8 +82,8 @@ explicit Envoy update; they are not automatically externalized by Embody.
 other rig controls. `tools/build_deploy.py` prepares the Envoy source/config
 update. Never edit `externalizations.tsv` manually.
 
-Checks: `.venv/bin/python3 verify.py` and
-`.venv/bin/python3 -m unittest discover -s tests -v`.
+Checks: `.venvs/macos-arm64/bin/python3 verify.py` and
+`.venvs/macos-arm64/bin/python3 -m unittest discover -s tests -v`.
 See [LAYOUT_7_PLUS_COMP_PLAN.md](LAYOUT_7_PLUS_COMP_PLAN.md) for the migration
 record. The old three-layer design below the current-revision note in
 DESIGN.md is historical. FX toggles are immediate; Select+pad captures current
@@ -107,7 +144,12 @@ A real Windows backend needs a **WinUSB driver bound to interface 0**, normally 
 ### Running the helper standalone
 
 ```
-DYLD_LIBRARY_PATH=/opt/homebrew/opt/libusb/lib .venv/bin/python3 display/push2_display_helper.py
+DYLD_LIBRARY_PATH=/opt/homebrew/opt/libusb/lib .venvs/macos-arm64/bin/python3 display/push2_display_helper.py
 ```
 
-Requires `pyusb` (`pip install pyusb`, installed in `.venv`) and `libusb` (`brew install libusb` on macOS). Sends a solid red test frame, then (on Enter) an 8-bar color gradient — for confirming the physical display path independent of TouchDesigner.
+Requires `pyusb` (installed in `.venvs/macos-arm64`) and `libusb` (`brew install libusb` on macOS). Sends a solid red test frame, then (on Enter) an 8-bar color gradient — for confirming the physical display path independent of TouchDesigner.
+
+The existing macOS environment lives in `.venvs/macos-arm64`. The `.venv`
+symlink is a compatibility alias for older saved TD projects and commands,
+not a second environment. Both paths are ignored by version control. Create
+a separate environment on Windows; do not transfer this macOS environment.

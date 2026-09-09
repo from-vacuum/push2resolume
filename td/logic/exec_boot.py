@@ -4,7 +4,7 @@ onStart (DESIGN.md 5)."""
 
 
 def onStart():
-	run("parent.PushResolume.Boot()", delayFrames=15)
+	run("args[0].Boot()", parent.PushResolume, delayFrames=15)
 	return
 
 
@@ -30,7 +30,7 @@ def onPlayStateChange(state):
 
 
 def onDeviceChange():
-	run("parent.PushResolume.Boot()", delayFrames=15)
+	run("args[0].Boot()", parent.PushResolume, delayFrames=15)
 	return
 
 

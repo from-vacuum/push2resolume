@@ -16,3 +16,21 @@
 ## Python envs
 **/venv/
 **/.venv/
+/.venv
+/.venvs/
+
+# Embody / Envoy (auto-managed)
+Backup/
+logs/
+CrashAutoSave*
+.venv/
+.mcp.json
+.tdn_backup/
+opencode.json
+.embody/*
+!.embody/project.json
+.claude/settings.local.json
+.claude/projects/
+briefs/
+__pycache__/
+.DS_Store
