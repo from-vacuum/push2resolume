@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('push2_display_helper',
@@ -49,6 +49,31 @@ class BackendSelectionTests(unittest.TestCase):
             self.assertIs(cls.close, helper._LibUsbBackend.close)
 
 
+class ServerRecoveryTests(unittest.TestCase):
+    def test_missing_hardware_throttles_reconnections_and_closes_socket(self):
+        server, conn = Mock(), Mock()
+        server.accept.side_effect = [(conn, ('127.0.0.1', 12345)), KeyboardInterrupt()]
+        with patch.object(helper.socket, 'socket', return_value=server), \
+                patch.object(helper, 'make_backend', side_effect=RuntimeError('Push 2 not found')), \
+                patch.object(helper.time, 'sleep') as sleep, patch('builtins.print'):
+            helper.serve(9872)
+        conn.close.assert_called_once()
+        sleep.assert_called_once_with(helper.RECONNECT_DELAY_S)
+        server.close.assert_called_once()
+
+    def test_disconnect_throttles_retry_and_releases_usb(self):
+        server, conn, backend = Mock(), Mock(), Mock()
+        server.accept.side_effect = [(conn, ('127.0.0.1', 12345)), KeyboardInterrupt()]
+        with patch.object(helper.socket, 'socket', return_value=server), \
+                patch.object(helper, 'make_backend', return_value=backend), \
+                patch.object(helper, '_serve_connection'), \
+                patch.object(helper.time, 'sleep') as sleep, patch('builtins.print'):
+            helper.serve(9872)
+        conn.close.assert_called_once()
+        backend.close.assert_called_once()
+        sleep.assert_called_once_with(helper.RECONNECT_DELAY_S)
+
+
 class LibusbResolutionTests(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(os.environ, {}, clear=False)
@@ -65,7 +90,7 @@ class LibusbResolutionTests(unittest.TestCase):
     def test_falls_back_to_newest_touchdesigner_install(self):
         installs = [r'C:\Program Files\Derivative\TouchDesigner.2023.11760\bin\libusb-1.0.dll',
                     r'C:\Program Files\Derivative\TouchDesigner.2025.32820\bin\libusb-1.0.dll']
-        with patch.object(helper.glob, 'glob', side_effect=lambda p: installs if 'Program Files\\D' in p else []):
+        with patch.object(helper.glob, 'glob', side_effect=lambda p: installs if 'Program Files/Derivative' in p.replace('\\', '/') else []):
             with patch.object(helper.os.path, 'isfile', return_value=True):
                 self.assertIn('2025.32820', helper.find_libusb_dll())
 

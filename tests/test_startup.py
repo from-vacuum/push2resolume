@@ -116,6 +116,21 @@ class StartupTests(unittest.TestCase):
         self.display._connect(old)
         self.assertEqual(self.net.par.active, 0)
 
+    def test_disconnect_disables_socket_and_coalesces_retry_callbacks(self):
+        self.display.connected = True
+        self.display.OnClose()
+        self.display.OnClose()
+        self.assertFalse(self.display.connected)
+        self.assertEqual(self.net.par.active, 0)
+        self.run.assert_called_once()
+        self.assertEqual(self.run.call_args.kwargs['delayFrames'], 90)
+        self.assertTrue(self.display._reconnectPending)
+        self.display.process = Mock()
+        self.display.process.poll.return_value = None
+        self.display._attemptReconnect()
+        self.assertFalse(self.display._reconnectPending)
+        self.assertEqual(self.net.par.active, 0)
+
     def test_boot_waits_for_helpers_and_invalidates_led_cache(self):
         module = runpy.run_path(str(ROOT / 'td/logic/ext_PushResolume.py'))
         ext = module['PushResolumeExt'](self.owner)
@@ -194,6 +209,16 @@ class RefreshTests(unittest.TestCase):
             self.module['refresh'](self.root)
         self.assertEqual(self.storage['refresh_status']['state'], 'failed')
         self.assertIn('broken extension', self.storage['refresh_status']['error'])
+
+    def test_layer_binding_failure_reports_recovery_instruction(self):
+        self.storage['refresh_status'] = {'token': 1}
+        self.ext.Health['layers_ok'] = False
+        reason = 'Layer identities changed; Shift+Stop to rebind'
+        self.ext.ResolumeState.BindingError = reason
+        with patch('builtins.print') as output:
+            self.module['_report'](self.root, 1, 7)
+        self.assertEqual(self.storage['refresh_status']['bindingError'], reason)
+        self.assertTrue(any(reason in str(c) for c in output.call_args_list))
 
     def test_stale_completion_cannot_replace_newer_status(self):
         self.storage['refresh_status'] = {'token': 2, 'state': 'running'}

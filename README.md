@@ -55,6 +55,10 @@ writes and temporary encoder/FX feedback are discarded; mode, focus, pages,
 layer identity bindings and captured FX values stay intact. Controls are
 disarmed during the read. Failed reads show a warning and remain disarmed until
 fresh state arrives. Shift+Stop remains the explicit layer-identity rebind.
+When moving a saved `.toe` between machines with different Resolume layer
+IDs/order, verify the current seven-layer order and press Shift+Stop to adopt
+it. Refresh deliberately preserves bindings and reports the exact mismatch;
+it does not silently assign controls to different layers.
 
 For full recovery, pulse `Refresh` on `/project1/PUSH_RESOLUME` (or call
 `op('/project1/PUSH_RESOLUME').Refresh()` in the Textport). This rebuilds the
@@ -68,6 +72,10 @@ The last result is available via the component's `refresh_status` storage.
 LCD startup explicitly closes the saved TCP client before reconnecting on a
 later frame. Helper paths are resolved relative to the project folder, and
 shutdown cancels pending reconnects so closing the project cannot respawn it.
+If MIDI output fails, the controller marks Push disconnected and stops LED
+writes instead of raising an error every tick. Reconnect the device and pulse
+Refresh to retry initialization. LCD backend failures are throttled, and the
+TCP client is disabled between delayed reconnect attempts.
 
 Text LCD mode shows target names, encoder labels/values, clip playback, loaded
 slot counts, effect lists with opacity/bypass state, bank/page, focus, deck, BPM

@@ -14,6 +14,7 @@ import os
 import sys
 import struct
 import socket
+import time
 
 VENDOR_ID = 0x2982
 PRODUCT_ID = 0x1967
@@ -82,6 +83,7 @@ def gradient_frame():
 
 
 WRITE_CHUNK_BYTES = 16384  # manual: "typically sent using larger buffers, e.g. 16kbytes each"
+RECONNECT_DELAY_S = 1.0
 
 LIBUSB_DIR_ENV = "PUSH2_LIBUSB_DIR"
 LIBUSB_DLL_NAME = "libusb-1.0.dll"
@@ -275,6 +277,8 @@ def serve(port, force_stub=False):
             except Exception as e:
                 print(f"[push2_display_helper] backend open failed: {e}")
                 conn.close()
+                # No hardware/driver must not cause a tight TCP callback loop in TD.
+                time.sleep(RECONNECT_DELAY_S)
                 continue
             try:
                 _serve_connection(conn, backend)
@@ -282,6 +286,7 @@ def serve(port, force_stub=False):
                 conn.close()
                 backend.close()
             print("[push2_display_helper] client disconnected, waiting for reconnect")
+            time.sleep(RECONNECT_DELAY_S)
     except KeyboardInterrupt:
         pass
     finally:

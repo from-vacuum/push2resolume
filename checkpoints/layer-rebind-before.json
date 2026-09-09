@@ -1,0 +1,112 @@
+{
+  "success": true,
+  "result": {
+    "composition": {
+      "valuetype": "ParamString",
+      "id": 1788985435076,
+      "value": "BM_2026"
+    },
+    "configured": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7"
+    ],
+    "saved": {
+      "1": 1788935126874,
+      "2": 1788935126693,
+      "3": 1788935126512,
+      "4": 1788935126439,
+      "5": 1694579394136,
+      "6": 1694579394230,
+      "7": 1694579394324
+    },
+    "layers": [
+      {
+        "index": 1,
+        "id": 1694579394136,
+        "name": "B",
+        "effects": [
+          "Transform",
+          "Transform",
+          "LinearCloner",
+          "Acuarela",
+          "Goo",
+          "WaveWarp",
+          "WarpSpeed",
+          "InfiniteZoom",
+          "AutoMask",
+          "RoundMask"
+        ]
+      },
+      {
+        "index": 2,
+        "id": 1788924228319,
+        "name": "Layer #",
+        "effects": [
+          "Transform"
+        ]
+      },
+      {
+        "index": 3,
+        "id": 1788924232740,
+        "name": "Layer #",
+        "effects": [
+          "Transform"
+        ]
+      },
+      {
+        "index": 4,
+        "id": 1788924237161,
+        "name": "Layer #",
+        "effects": [
+          "Transform"
+        ]
+      },
+      {
+        "index": 5,
+        "id": 1788924241582,
+        "name": "Layer #",
+        "effects": [
+          "Transform"
+        ]
+      },
+      {
+        "index": 6,
+        "id": 1694579394230,
+        "name": "Mid",
+        "effects": [
+          "Transform",
+          "Terrain",
+          "Ripples",
+          "Mirror",
+          "Reveal",
+          "AutoMask",
+          "RadialCloner",
+          "SearchLight",
+          "ShiftRGB",
+          "Slide"
+        ]
+      },
+      {
+        "index": 7,
+        "id": 1694579394324,
+        "name": "FX + masks",
+        "effects": [
+          "Transform",
+          "AutoMask",
+          "Twisted",
+          "Suckr",
+          "Ripples",
+          "RadialBlur",
+          "Vignette",
+          "ParticleSystem",
+          "InvertRGB"
+        ]
+      }
+    ]
+  }
+}

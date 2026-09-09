@@ -145,6 +145,7 @@ class Display:
 		self.connected = False
 		self._stopping = False
 		self._connectGeneration = 0
+		self._reconnectPending = False
 		self.mode = ownerComp.fetch('layout7_ui', {}, search=False).get('display', 'text')
 
 	def Cfg(self, key, default=None, cast=str):
@@ -251,6 +252,7 @@ class Display:
 		"""Delayed-quit companion to PushResolumeExt.CloseProject -- called
 		before the MIDI teardown so nothing hangs waiting on this process."""
 		self._stopping = True
+		self._reconnectPending = False
 		self._connectGeneration += 1
 		net = self._net()
 		if net is not None:
@@ -272,10 +274,15 @@ class Display:
 		recovery is automatic a beat later so a brief blip doesn't spam
 		relaunches (Phase 6e)."""
 		self.connected = False
-		if not self._stopping:
+		# Disable TD's immediate socket retry before scheduling our delayed retry.
+		# A missing USB device otherwise produces an unbounded onConnect/onClose loop.
+		self._net().par.active = 0
+		if not self._stopping and not self._reconnectPending:
+			self._reconnectPending = True
 			run("args[0]._attemptReconnect()", self, delayFrames=90)
 
 	def _attemptReconnect(self):
+		self._reconnectPending = False
 		if self._stopping or self.connected:
 			return  # a newer connection already landed; don't undo it
 		if not self.IsHelperAlive():

@@ -18,6 +18,7 @@ class PushIO:
 		self.Bound = False
 		self.PushMode = False
 		self.LastInquiryReply = None
+		self.LastError = ''
 		self._ledCache = {}
 		self._ledQueue = []
 		self._ledQueued = set()
@@ -62,7 +63,23 @@ class PushIO:
 
 	def SendExclusive(self, *b):
 		"""Send SysEx. F0/F7 framing is added by TD -- never pass it here (P9)."""
-		self.midiOut.sendExclusive(*b)
+		if not self.Bound:
+			return False
+		try:
+			self.midiOut.sendExclusive(*b)
+		except Exception as error:
+			self._deviceFailed(error)
+			return False
+		return True
+
+	def _deviceFailed(self, error):
+		self.Bound = False
+		self.PushMode = False
+		self.InvalidateLeds()
+		message = str(error)
+		if message != self.LastError:
+			print('[Push MIDI] Disconnected: %s. Reconnect Push and pulse Refresh.' % message)
+		self.LastError = message
 
 	def DeviceInquiry(self):
 		self.SendExclusive(0x7E, 0x7F, 0x06, 0x01)
@@ -72,10 +89,13 @@ class PushIO:
 		reactivates ~0.5s later, to reduce the CoreMIDI endpoint-reconnect race
 		observed to crash TD when Push re-enumerates on a mode switch."""
 		val = {'live': 0x00, 'user': 0x01, 'dual': 0x02}[mode]
+		if not self.Bound:
+			return False
 		self.midiIn.par.active = 0
-		self.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x0A, val)
+		sent = self.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x0A, val)
 		run("args[0]._reactivateInput()", self, delayFrames=30)
-		self.PushMode = (mode == 'user')
+		self.PushMode = sent and (mode == 'user')
+		return sent
 
 	def _reactivateInput(self):
 		self.midiIn.par.active = 1
@@ -124,23 +144,23 @@ class PushIO:
 	def Boot(self):
 		"""Steps 1-9 of DESIGN.md 5. Step 10 (REST bootstrap) and step 11 (full LED
 		redraw) are driven by the orchestrator once ResolumeState/LedPainter exist."""
-		self.BindDevice()
-		self.DeviceInquiry()
-		self.SetMode('user')
-		self.SetAftertouch()
-		self.SetLedBrightness()
-		self.SetDisplayBrightness()
-		self.WritePalette()
-		self.ReapplyPalette()
-		self.SetTouchstrip()
+		try:
+			self.BindDevice()
+			for action in (self.DeviceInquiry, lambda: self.SetMode('user'),
+			               self.SetAftertouch, self.SetLedBrightness, self.SetDisplayBrightness,
+			               self.WritePalette, self.ReapplyPalette, self.SetTouchstrip):
+				action()
+				if not self.Bound:
+					return False
+		except Exception as error:
+			self._deviceFailed(error)
+			return False
+		self.LastError = ''
+		self.InvalidateLeds()
+		return True
 
 	def Panic(self):
-		self.SetMode('user')
-		self.WritePalette()
-		self.ReapplyPalette()
-		self._ledCache.clear()
-		self._ledQueue = []
-		self._ledQueued.clear()
+		return self.Boot()
 
 	def AllLedsOff(self):
 		for (kind, number) in list(self._ledCache.keys()):
@@ -179,6 +199,8 @@ class PushIO:
 		self._ledPending[key] = palette_index
 
 	def FlushLeds(self, cap=48):
+		if not self.Bound:
+			return 0
 		pending = getattr(self, '_ledPending', {})
 		sent = 0
 		while self._ledQueue and sent < cap:
@@ -187,7 +209,11 @@ class PushIO:
 			idx = pending.pop(key, None)
 			if idx is None:
 				continue
-			self._writeLed(key[0], key[1], idx)
+			try:
+				self._writeLed(key[0], key[1], idx)
+			except Exception as error:
+				self._deviceFailed(error)
+				break
 			self._ledCache[key] = idx
 			sent += 1
 		return sent

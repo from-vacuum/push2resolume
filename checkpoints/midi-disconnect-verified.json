@@ -1,0 +1,64 @@
+{
+  "success": true,
+  "results": [
+    {
+      "path": "/project1/PUSH_RESOLUME",
+      "errorCount": 0,
+      "warningCount": 3,
+      "hasErrors": false,
+      "hasWarnings": true,
+      "errors": [],
+      "warnings": [
+        {
+          "nodePath": "/project1/PUSH_RESOLUME/midi/midiout1",
+          "nodeName": "midiout1",
+          "opType": "midioutCHOP",
+          "message": "/project1/PUSH_RESOLUME/net/oscout1:Warning: Could not open the MIDI interface: Ableton Push 2 User Port"
+        },
+        {
+          "nodePath": "/project1/PUSH_RESOLUME/display/syphonspoutin1",
+          "nodeName": "syphonspoutin1",
+          "opType": "syphonspoutinTOP",
+          "message": "/project1/PUSH_RESOLUME/display/syphonspoutin1:Warning: Resolution limited to max 1280x1280 with Non-Commercial key."
+        },
+        {
+          "nodePath": "/project1/PUSH_RESOLUME/display/syphonspoutin2",
+          "nodeName": "syphonspoutin2",
+          "opType": "syphonspoutinTOP",
+          "message": "/project1/PUSH_RESOLUME/display/syphonspoutin2:Warning: Resolution limited to max 1280x1280 with Non-Commercial key."
+        }
+      ]
+    },
+    {
+      "timing": {
+        "fps": 59.0,
+        "frameTimeMs": 2.8622498512268066,
+        "cookRate": 60.0,
+        "cookRealTime": true,
+        "timeSliceMs": 200.0,
+        "timeSliceStep": 12.0
+      },
+      "memory": {
+        "gpuMemUsedMB": 334.5811767578125,
+        "totalGpuMemMB": 30150.671875,
+        "cpuMemUsedMB": 699.5640258789062
+      },
+      "frameHealth": {
+        "droppedFrames": 11,
+        "cookedLastFrame": false,
+        "activeOps": 12,
+        "totalOps": 1190
+      },
+      "gpu": {
+        "chipTemperatureC": -1.0,
+        "boardTemperatureC": -1.0
+      },
+      "performMode": false
+    },
+    {
+      "success": true,
+      "result": "{'frame': 17371, 'bound': True, 'lastMidiError': '', 'ledQueue': 0, 'runs': 4, 'source': '\"\"\"PushIO: device binding, SysEx handshake, MIDI decode, LED write path.\\nNothing else in the project touches MIDI. See DESIGN.md 2.3, 5, 7.1, 7.3.\\n\"\"\"\\n\\nimport platform\\n\\n\\ndef _split7(v):\\n\\tv = int(v) & 0xFF\\n\\treturn (v & 0x7F, (v >> 7) & 0x01)\\n\\n\\nclass PushIO:\\n\\tdef __init__(self, ownerComp):\\n\\t\\tself.ownerComp = ownerComp\\n\\t\\tself.midiOut = ownerComp.op(\\'midi/midiout1\\')\\n\\t\\tself.midiIn = ownerComp.op(\\'midi/midiin1\\')\\n\\t\\tself.Bound = False\\n\\t\\tself.PushMode = False\\n\\t\\tself.LastInquiryReply = None\\n\\t\\tself.LastError = \\'\\'\\n\\t\\tself._ledCache = {}\\n\\t\\tself._ledQueue = []\\n\\t\\tself._ledQueued = set()\\n\\t\\tself._blinkPads = {}\\n\\t\\tself._blinkPhase = False\\n\\t\\tself._blinkFrameAcc = 0\\n\\n\\tdef Cfg(self, key, default=None, cast=str):\\n\\t\\tt = self.ownerComp.op(\\'config/cfg_general\\')\\n\\t\\tfor r in range(1, t.numRows):\\n\\t\\t\\tif t[r, \\'key\\'].val == key:\\n\\t\\t\\t\\treturn cast(t[r, \\'value\\'].val)\\n\\t\\treturn default\\n\\n\\tdef BindDevice(self):\\n\\t\\t\"\"\"Resolve the platform-correct device name, ensure /local/midi/device\\n\\t\\thas a matching row, point midiin1/midiout1 at it, and activate input.\"\"\"\\n\\t\\tplat = \\'darwin\\' if platform.system() == \\'Darwin\\' else \\'win32\\'\\n\\t\\tinname = self.Cfg(\\'push_in_name_\\' + plat, \\'\\')\\n\\t\\toutname = self.Cfg(\\'push_out_name_\\' + plat, \\'\\')\\n\\t\\tdevtable = op(\\'/local/midi/device\\')\\n\\t\\tmatch_id = None\\n\\t\\tfor r in range(1, devtable.numRows):\\n\\t\\t\\tcell = devtable[r, \\'indevice\\'].val\\n\\t\\t\\tif cell == inname or (inname and cell.startswith(inname.split(\\' \\')[0])):\\n\\t\\t\\t\\tmatch_id = devtable[r, \\'id\\'].val\\n\\t\\t\\t\\tbreak\\n\\t\\tif match_id is None:\\n\\t\\t\\tnew_id = str(devtable.numRows)\\n\\t\\t\\tdevtable.appendRow([new_id, inname, outname, \\'\\', \\'1\\'])\\n\\t\\t\\tmatch_id = new_id\\n\\t\\tself.midiIn.par.device = \\'/local/midi/device\\'\\n\\t\\tself.midiIn.par.id = match_id\\n\\t\\tself.midiOut.par.device = \\'/local/midi/device\\'\\n\\t\\tself.midiOut.par.id = match_id\\n\\t\\tself.midiOut.par.notenorm = \\'None\\'\\n\\t\\tself.midiOut.par.controlnorm = \\'None\\'\\n\\t\\tself.midiIn.par.bytes = 1\\n\\t\\tself.midiIn.par.active = 1\\n\\t\\tself.Bound = True\\n\\t\\treturn match_id\\n\\n\\tdef SendExclusive(self, *b):\\n\\t\\t\"\"\"Send SysEx. F0/F7 framing is added by TD -- never pass it here (P9).\"\"\"\\n\\t\\tif not self.Bound:\\n\\t\\t\\treturn False\\n\\t\\ttry:\\n\\t\\t\\tself.midiOut.sendExclusive(*b)\\n\\t\\texcept Exception as error:\\n\\t\\t\\tself._deviceFailed(error)\\n\\t\\t\\treturn False\\n\\t\\treturn True\\n\\n\\tdef _deviceFailed(self, error):\\n\\t\\tself.Bound = False\\n\\t\\tself.PushMode = False\\n\\t\\tself.InvalidateLeds()\\n\\t\\tmessage = str(error)\\n\\t\\tif message != self.LastError:\\n\\t\\t\\tprint(\\'[Push MIDI] Disconnected: %s. Reconnect Push and pulse Refresh.\\' % message)\\n\\t\\tself.LastError = message\\n\\n\\tdef DeviceInquiry(self):\\n\\t\\tself.SendExclusive(0x7E, 0x7F, 0x06, 0x01)\\n\\n\\tdef SetMode(self, mode):\\n\\t\\t\"\"\"mode: \\'user\\' | \\'live\\' | \\'dual\\'. Deactivates midiin1 around the send and\\n\\t\\treactivates ~0.5s later, to reduce the CoreMIDI endpoint-reconnect race\\n\\t\\tobserved to crash TD when Push re-enumerates on a mode switch.\"\"\"\\n\\t\\tval = {\\'live\\': 0x00, \\'user\\': 0x01, \\'dual\\': 0x02}[mode]\\n\\t\\tif not self.Bound:\\n\\t\\t\\treturn False\\n\\t\\tself.midiIn.par.active = 0\\n\\t\\tsent = self.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x0A, val)\\n\\t\\trun(\"args[0]._reactivateInput()\", self, delayFrames=30)\\n\\t\\tself.PushMode = sent and (mode == \\'user\\')\\n\\t\\treturn sent\\n\\n\\tdef _reactivateInput(self):\\n\\t\\tself.midiIn.par.active = 1\\n\\n\\tdef SetAftertouch(self):\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x1E,\\n\\t\\t                    self.Cfg(\\'push_aftertouch_mode\\', 0, int))\\n\\n\\tdef SetLedBrightness(self):\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x06,\\n\\t\\t                    self.Cfg(\\'push_led_brightness\\', 100, int))\\n\\n\\tdef SetDisplayBrightness(self):\\n\\t\\tb = self.Cfg(\\'push_display_brightness\\', 0, int)\\n\\t\\tlsb, msb = _split7(b)\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x08, lsb, msb)\\n\\n\\tdef PaletteIndex(self, name):\\n\\t\\tt = self.ownerComp.op(\\'config/map_palette\\')\\n\\t\\tfor r in range(1, t.numRows):\\n\\t\\t\\tif t[r, \\'name\\'].val == name:\\n\\t\\t\\t\\treturn int(t[r, \\'palette_index\\'].val)\\n\\t\\treturn 0\\n\\n\\tdef WritePalette(self):\\n\\t\\tt = self.ownerComp.op(\\'config/map_palette\\')\\n\\t\\tfor r in range(1, t.numRows):\\n\\t\\t\\tidx = int(t[r, \\'palette_index\\'].val)\\n\\t\\t\\trl, rm = _split7(t[r, \\'r\\'].val)\\n\\t\\t\\tgl, gm = _split7(t[r, \\'g\\'].val)\\n\\t\\t\\tbl, bm = _split7(t[r, \\'b\\'].val)\\n\\t\\t\\twl, wm = _split7(t[r, \\'w\\'].val)\\n\\t\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x03, idx,\\n\\t\\t\\t                    rl, rm, gl, gm, bl, bm, wl, wm)\\n\\n\\tdef ReapplyPalette(self):\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x05)\\n\\n\\tdef SetTouchstrip(self):\\n\\t\\tflags = self.Cfg(\\'push_touchstrip_config\\', 0x10, lambda v: int(v, 0) if isinstance(v, str) and v.startswith(\\'0x\\') else int(v))\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x17, flags)\\n\\n\\tdef RestoreTouchStrip(self):\\n\\t\\tself.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x17, 0x68)\\n\\n\\tdef Boot(self):\\n\\t\\t\"\"\"Steps 1-9 of DESIGN.md 5. Step 10 (REST bootstrap) and step 11 (full LED\\n\\t\\tredraw) are driven by the orchestrator once ResolumeState/LedPainter exist.\"\"\"\\n\\t\\ttry:\\n\\t\\t\\tself.BindDevice()\\n\\t\\t\\tfor action in (self.DeviceInquiry, lambda: self.SetMode(\\'user\\'),\\n\\t\\t\\t               self.SetAftertouch, self.SetLedBrightness, self.SetDisplayBrightness,\\n\\t\\t\\t               self.WritePalette, self.ReapplyPalette, self.SetTouchstrip):\\n\\t\\t\\t\\taction()\\n\\t\\t\\t\\tif not self.Bound:\\n\\t\\t\\t\\t\\treturn False\\n\\t\\texcept Exception as error:\\n\\t\\t\\tself._deviceFailed(error)\\n\\t\\t\\treturn False\\n\\t\\tself.LastError = \\'\\'\\n\\t\\tself.InvalidateLeds()\\n\\t\\treturn True\\n\\n\\tdef Panic(self):\\n\\t\\treturn self.Boot()\\n\\n\\tdef AllLedsOff(self):\\n\\t\\tfor (kind, number) in list(self._ledCache.keys()):\\n\\t\\t\\tself.SetLed(kind, number, 0)\\n\\t\\tself.FlushLeds(cap=999)\\n\\n\\tdef InvalidateLeds(self):\\n\\t\\tself._ledCache.clear()\\n\\t\\tself._ledQueue.clear()\\n\\t\\tself._ledQueued.clear()\\n\\t\\tself._ledPending = {}\\n\\t\\tself._blinkPads.clear()\\n\\t\\tself._blinkPhase = False\\n\\t\\tself._blinkFrameAcc = 0\\n\\n\\t# --- LED diff cache + per-tick cap ---\\n\\n\\tdef SetLed(self, kind, number, palette_index, blink_with=None):\\n\\t\\t\"\"\"kind: \\'note\\' (pads) or \\'cc\\' (buttons/encoder rings). Queues a write only\\n\\t\\tif the resolved index differs from what is already on the hardware.\"\"\"\\n\\t\\tkey = (kind, number)\\n\\t\\tif blink_with is not None:\\n\\t\\t\\tself._blinkPads[key] = (palette_index, blink_with)\\n\\t\\t\\tself._queueLed(key, blink_with if self._blinkPhase else palette_index)\\n\\t\\telse:\\n\\t\\t\\tself._blinkPads.pop(key, None)\\n\\t\\t\\tself._queueLed(key, palette_index)\\n\\n\\tdef _queueLed(self, key, palette_index):\\n\\t\\tif self._ledCache.get(key) == palette_index:\\n\\t\\t\\treturn\\n\\t\\tif key not in self._ledQueued:\\n\\t\\t\\tself._ledQueue.append(key)\\n\\t\\t\\tself._ledQueued.add(key)\\n\\t\\tself._ledPending = getattr(self, \\'_ledPending\\', {})\\n\\t\\tself._ledPending[key] = palette_index\\n\\n\\tdef FlushLeds(self, cap=48):\\n\\t\\tif not self.Bound:\\n\\t\\t\\treturn 0\\n\\t\\tpending = getattr(self, \\'_ledPending\\', {})\\n\\t\\tsent = 0\\n\\t\\twhile self._ledQueue and sent < cap:\\n\\t\\t\\tkey = self._ledQueue.pop(0)\\n\\t\\t\\tself._ledQueued.discard(key)\\n\\t\\t\\tidx = pending.pop(key, None)\\n\\t\\t\\tif idx is None:\\n\\t\\t\\t\\tcontinue\\n\\t\\t\\ttry:\\n\\t\\t\\t\\tself._writeLed(key[0], key[1], idx)\\n\\t\\t\\texcept Exception as error:\\n\\t\\t\\t\\tself._deviceFailed(error)\\n\\t\\t\\t\\tbreak\\n\\t\\t\\tself._ledCache[key] = idx\\n\\t\\t\\tsent += 1\\n\\t\\treturn sent\\n\\n\\tdef _writeLed(self, kind, number, idx):\\n\\t\\t# Same TD 1-indexing as input (PHASE3A_FINDINGS.md 7), mirrored for\\n\\t\\t# output: Session button lit only when writing CC52, not the\\n\\t\\t# CSV-logical 51. number here is always CSV-logical.\\n\\t\\thw_number = number + 1\\n\\t\\tif kind == \\'note\\':\\n\\t\\t\\tself.midiOut.sendNoteOn(1, hw_number, idx)\\n\\t\\telse:\\n\\t\\t\\tself.midiOut.sendControl(1, hw_number, idx)\\n\\n\\tdef BlinkTick(self, frame_delta_frames, blink_hz, tick_hz):\\n\\t\\t\"\"\"Call once per 30Hz tick. Toggles cached blink pads between their two\\n\\t\\tpalette indices at blink_hz. Software-only -- see DESIGN.md 5.2.\"\"\"\\n\\t\\tself._blinkFrameAcc += frame_delta_frames\\n\\t\\tperiod_ticks = max(1, int(tick_hz / (2.0 * blink_hz)))\\n\\t\\tif self._blinkFrameAcc < period_ticks:\\n\\t\\t\\treturn\\n\\t\\tself._blinkFrameAcc = 0\\n\\t\\tself._blinkPhase = not self._blinkPhase\\n\\t\\tfor key, (idx_a, idx_b) in self._blinkPads.items():\\n\\t\\t\\tself._queueLed(key, idx_b if self._blinkPhase else idx_a)\\n'}"
+    }
+  ],
+  "count": 3
+}
