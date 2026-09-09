@@ -60,6 +60,8 @@ def generate():
         prefix = '/composition' + ('/layers/{L%d}' % i if i < 8 else '')
         color = 'L%d' % i if i < 8 else 'COMP'
         add('LOWER_%d' % i, 'LOWER_ROW',19+i,'layer_focus' if i < 8 else 'comp_focus',target,prefix+'/select',transport='osc',palette=color+'_DIM|'+color+'_FULL')
+        speed_path = prefix + ('/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed' if i < 8 else '/speed')
+        add('LOWER_%d_SHIFT' % i,'LOWER_ROW',19+i,'speed_reset',target,speed_path,modifier='SHIFT',transport='internal',value='1.0',vtype='float',palette=color+'_DIM|'+color+'_FULL',notes='Native WebSocket reset by parameter ID; read back actual speed, preserve focus.')
         add('UPPER_%d' % i,'UPPER_ROW',101+i,'layer_clear' if i < 8 else 'comp_disconnect_all',target,prefix+'/clear' if i<8 else '/composition/disconnectall',transport='osc',palette=color+'_DIM|'+color+'_FULL')
         add('UPPER_%d_SHIFT' % i,'UPPER_ROW',101+i,'layer_solo_toggle' if i<8 else 'tempo_resync',target,prefix+'/solo' if i<8 else '/composition/tempocontroller/resync',modifier='SHIFT',transport='osc',value='0|1' if i<8 else '1',palette='OFF|SOLO')
         for mod, suffix in (('', '/video/opacity'), ('SHIFT','/speed')):

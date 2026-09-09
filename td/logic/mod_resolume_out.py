@@ -66,6 +66,12 @@ class ResolumeOut:
 		if not ws_only:
 			self._oscCache.clear()
 
+	def CancelOSC(self, path):
+		self._oscCache.pop(path, None)
+		self._oscPending.pop(path, None)
+		self._oscQueued.discard(path)
+		self._oscQueue[:] = [p for p in self._oscQueue if p != path]
+
 	@staticmethod
 	def _enqueue(queue, queued, pending, key, item):
 		if key not in queued:
@@ -117,7 +123,10 @@ class ResolumeOut:
 			if item is None or 'fx[' in path:
 				continue
 			value, value_type = item
-			self._sendWS(path, value)
+			if value_type == 'reset':
+				self.wsOut.sendText(json.dumps({'action':'reset', 'parameter':path}))
+			else:
+				self._sendWS(path, value)
 			self._wsReadbacks[path] = time.monotonic() + 0.05
 			sent += 1
 		# Read on a later Resolume frame, not from its pre-write set reply.
@@ -138,3 +147,8 @@ class ResolumeOut:
 		row = {'id': 'FX_' + str(param_id), 'action': 'fx_set', 'transport': 'ws',
 		       'value_type': 'bool_as_int' if isinstance(value, bool) else 'float'}
 		return self.Send(row, '/parameter/by-id/%s' % param_id, value)
+
+	def ResetWSById(self, param_id):
+		row = {'id':'RESET_' + str(param_id), 'action':'speed_reset',
+		       'transport':'ws', 'value_type':'reset'}
+		return self.Send(row, '/parameter/by-id/%s' % param_id, None)

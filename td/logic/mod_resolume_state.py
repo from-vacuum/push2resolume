@@ -187,6 +187,11 @@ class ResolumeState:
 
     def _applyOptimistic(self, path, value):
         self.Parameters[path] = value
+        speed = re.fullmatch(r'/composition/layers/(\d+)/clips/(\d+)/transport/position/behaviour/speed', path)
+        if speed:
+            entry = self.Clips.get((speed[1],int(speed[2])))
+            if entry is not None:
+                entry['speed'] = self.NativeValue(path,value)
         clip = re.fullmatch(r'/composition/layers/(\d+)/clips/(\d+)/connect', path)
         column = re.fullmatch(r'/composition/columns/(\d+)/connect', path)
         clear = re.fullmatch(r'/composition/layers/(\d+)/clear', path)

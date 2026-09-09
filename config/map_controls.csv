@@ -312,6 +312,7 @@ PAD_S8_T8_FX_OPACITY_TOGGLE,GRID_FX,note,43,1,,FX,fx_opacity_toggle,COMPOSITION,
 PAD_S8_T8_FX_BYPASS_TOGGLE,GRID_FX,note,43,1,SHIFT,FX,fx_bypass_toggle,COMPOSITION,fx_page*8+8,ws,/parameter/by-id/{fx[COMPOSITION:fx_page*8+8].bypassed_id},bool_as_int,0|1,,OFF|FX_OFF|FX_MID|FX_ON|FX_BYPASSED,"Paged slot; immediate opacity toggle, Shift bypass, Select capture current opacity."
 PAD_S8_T8_FX_CAPTURE_ON_VALUE,GRID_FX,note,43,1,SELECT,FX,fx_capture_on_value,COMPOSITION,fx_page*8+8,internal,fx[COMPOSITION:fx_page*8+8].on_value,float,current opacity,,OFF|FX_OFF|FX_MID|FX_ON|FX_BYPASSED,"Paged slot; immediate opacity toggle, Shift bypass, Select capture current opacity."
 LOWER_1,LOWER_ROW,cc,20,1,,ANY,layer_focus,LAYER1,,osc,/composition/layers/{L1}/select,int,1,,L1_DIM|L1_FULL,
+LOWER_1_SHIFT,LOWER_ROW,cc,20,1,SHIFT,ANY,speed_reset,LAYER1,,internal,/composition/layers/{L1}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L1_DIM|L1_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_1,UPPER_ROW,cc,102,1,,ANY,layer_clear,LAYER1,,osc,/composition/layers/{L1}/clear,int,1,,L1_DIM|L1_FULL,
 UPPER_1_SHIFT,UPPER_ROW,cc,102,1,SHIFT,ANY,layer_solo_toggle,LAYER1,,osc,/composition/layers/{L1}/solo,int,0|1,,OFF|SOLO,
 ENC_1_SESSION,ENCODER,cc,71,1,,SESSION,param_relative,LAYER1,,osc,/composition/layers/{L1}/video/opacity,float,0.0-1.0,,,
@@ -321,6 +322,7 @@ RIGHT_1,RIGHT_COL,cc,36,1,,SESSION,clip_bank_select,SURFACE,bank_group+1,interna
 RIGHT_1_FX,RIGHT_COL,cc,36,1,,FX,fx_page_select,SURFACE,1,internal,surface.fx_page,int,1,,BANK_DIM|BANK_FULL,
 RIGHT_1_DECK,RIGHT_COL,cc,36,1,SHIFT,ANY,deck_select,COMPOSITION,1,osc,/composition/decks/1/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_2,LOWER_ROW,cc,21,1,,ANY,layer_focus,LAYER2,,osc,/composition/layers/{L2}/select,int,1,,L2_DIM|L2_FULL,
+LOWER_2_SHIFT,LOWER_ROW,cc,21,1,SHIFT,ANY,speed_reset,LAYER2,,internal,/composition/layers/{L2}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L2_DIM|L2_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_2,UPPER_ROW,cc,103,1,,ANY,layer_clear,LAYER2,,osc,/composition/layers/{L2}/clear,int,1,,L2_DIM|L2_FULL,
 UPPER_2_SHIFT,UPPER_ROW,cc,103,1,SHIFT,ANY,layer_solo_toggle,LAYER2,,osc,/composition/layers/{L2}/solo,int,0|1,,OFF|SOLO,
 ENC_2_SESSION,ENCODER,cc,72,1,,SESSION,param_relative,LAYER2,,osc,/composition/layers/{L2}/video/opacity,float,0.0-1.0,,,
@@ -330,6 +332,7 @@ RIGHT_2,RIGHT_COL,cc,37,1,,SESSION,clip_bank_select,SURFACE,bank_group+2,interna
 RIGHT_2_FX,RIGHT_COL,cc,37,1,,FX,fx_page_select,SURFACE,2,internal,surface.fx_page,int,1,,BANK_DIM|BANK_FULL,
 RIGHT_2_DECK,RIGHT_COL,cc,37,1,SHIFT,ANY,deck_select,COMPOSITION,2,osc,/composition/decks/2/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_3,LOWER_ROW,cc,22,1,,ANY,layer_focus,LAYER3,,osc,/composition/layers/{L3}/select,int,1,,L3_DIM|L3_FULL,
+LOWER_3_SHIFT,LOWER_ROW,cc,22,1,SHIFT,ANY,speed_reset,LAYER3,,internal,/composition/layers/{L3}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L3_DIM|L3_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_3,UPPER_ROW,cc,104,1,,ANY,layer_clear,LAYER3,,osc,/composition/layers/{L3}/clear,int,1,,L3_DIM|L3_FULL,
 UPPER_3_SHIFT,UPPER_ROW,cc,104,1,SHIFT,ANY,layer_solo_toggle,LAYER3,,osc,/composition/layers/{L3}/solo,int,0|1,,OFF|SOLO,
 ENC_3_SESSION,ENCODER,cc,73,1,,SESSION,param_relative,LAYER3,,osc,/composition/layers/{L3}/video/opacity,float,0.0-1.0,,,
@@ -339,6 +342,7 @@ RIGHT_3,RIGHT_COL,cc,38,1,,SESSION,clip_bank_select,SURFACE,bank_group+3,interna
 RIGHT_3_FX,RIGHT_COL,cc,38,1,,FX,reserved,SURFACE,3,internal,surface.fx_page,int,1,,OFF,
 RIGHT_3_DECK,RIGHT_COL,cc,38,1,SHIFT,ANY,deck_select,COMPOSITION,3,osc,/composition/decks/3/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_4,LOWER_ROW,cc,23,1,,ANY,layer_focus,LAYER4,,osc,/composition/layers/{L4}/select,int,1,,L4_DIM|L4_FULL,
+LOWER_4_SHIFT,LOWER_ROW,cc,23,1,SHIFT,ANY,speed_reset,LAYER4,,internal,/composition/layers/{L4}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L4_DIM|L4_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_4,UPPER_ROW,cc,105,1,,ANY,layer_clear,LAYER4,,osc,/composition/layers/{L4}/clear,int,1,,L4_DIM|L4_FULL,
 UPPER_4_SHIFT,UPPER_ROW,cc,105,1,SHIFT,ANY,layer_solo_toggle,LAYER4,,osc,/composition/layers/{L4}/solo,int,0|1,,OFF|SOLO,
 ENC_4_SESSION,ENCODER,cc,74,1,,SESSION,param_relative,LAYER4,,osc,/composition/layers/{L4}/video/opacity,float,0.0-1.0,,,
@@ -348,6 +352,7 @@ RIGHT_4,RIGHT_COL,cc,39,1,,SESSION,clip_bank_select,SURFACE,bank_group+4,interna
 RIGHT_4_FX,RIGHT_COL,cc,39,1,,FX,reserved,SURFACE,4,internal,surface.fx_page,int,1,,OFF,
 RIGHT_4_DECK,RIGHT_COL,cc,39,1,SHIFT,ANY,deck_select,COMPOSITION,4,osc,/composition/decks/4/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_5,LOWER_ROW,cc,24,1,,ANY,layer_focus,LAYER5,,osc,/composition/layers/{L5}/select,int,1,,L5_DIM|L5_FULL,
+LOWER_5_SHIFT,LOWER_ROW,cc,24,1,SHIFT,ANY,speed_reset,LAYER5,,internal,/composition/layers/{L5}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L5_DIM|L5_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_5,UPPER_ROW,cc,106,1,,ANY,layer_clear,LAYER5,,osc,/composition/layers/{L5}/clear,int,1,,L5_DIM|L5_FULL,
 UPPER_5_SHIFT,UPPER_ROW,cc,106,1,SHIFT,ANY,layer_solo_toggle,LAYER5,,osc,/composition/layers/{L5}/solo,int,0|1,,OFF|SOLO,
 ENC_5_SESSION,ENCODER,cc,75,1,,SESSION,param_relative,LAYER5,,osc,/composition/layers/{L5}/video/opacity,float,0.0-1.0,,,
@@ -357,6 +362,7 @@ RIGHT_5,RIGHT_COL,cc,40,1,,SESSION,clip_bank_select,SURFACE,bank_group+5,interna
 RIGHT_5_FX,RIGHT_COL,cc,40,1,,FX,reserved,SURFACE,5,internal,surface.fx_page,int,1,,OFF,
 RIGHT_5_DECK,RIGHT_COL,cc,40,1,SHIFT,ANY,deck_select,COMPOSITION,5,osc,/composition/decks/5/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_6,LOWER_ROW,cc,25,1,,ANY,layer_focus,LAYER6,,osc,/composition/layers/{L6}/select,int,1,,L6_DIM|L6_FULL,
+LOWER_6_SHIFT,LOWER_ROW,cc,25,1,SHIFT,ANY,speed_reset,LAYER6,,internal,/composition/layers/{L6}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L6_DIM|L6_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_6,UPPER_ROW,cc,107,1,,ANY,layer_clear,LAYER6,,osc,/composition/layers/{L6}/clear,int,1,,L6_DIM|L6_FULL,
 UPPER_6_SHIFT,UPPER_ROW,cc,107,1,SHIFT,ANY,layer_solo_toggle,LAYER6,,osc,/composition/layers/{L6}/solo,int,0|1,,OFF|SOLO,
 ENC_6_SESSION,ENCODER,cc,76,1,,SESSION,param_relative,LAYER6,,osc,/composition/layers/{L6}/video/opacity,float,0.0-1.0,,,
@@ -366,6 +372,7 @@ RIGHT_6,RIGHT_COL,cc,41,1,,SESSION,clip_bank_select,SURFACE,bank_group+6,interna
 RIGHT_6_FX,RIGHT_COL,cc,41,1,,FX,reserved,SURFACE,6,internal,surface.fx_page,int,1,,OFF,
 RIGHT_6_DECK,RIGHT_COL,cc,41,1,SHIFT,ANY,deck_select,COMPOSITION,6,osc,/composition/decks/6/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_7,LOWER_ROW,cc,26,1,,ANY,layer_focus,LAYER7,,osc,/composition/layers/{L7}/select,int,1,,L7_DIM|L7_FULL,
+LOWER_7_SHIFT,LOWER_ROW,cc,26,1,SHIFT,ANY,speed_reset,LAYER7,,internal,/composition/layers/{L7}/clips/{ACTIVE_CLIP}/transport/position/behaviour/speed,float,1.0,,L7_DIM|L7_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_7,UPPER_ROW,cc,108,1,,ANY,layer_clear,LAYER7,,osc,/composition/layers/{L7}/clear,int,1,,L7_DIM|L7_FULL,
 UPPER_7_SHIFT,UPPER_ROW,cc,108,1,SHIFT,ANY,layer_solo_toggle,LAYER7,,osc,/composition/layers/{L7}/solo,int,0|1,,OFF|SOLO,
 ENC_7_SESSION,ENCODER,cc,77,1,,SESSION,param_relative,LAYER7,,osc,/composition/layers/{L7}/video/opacity,float,0.0-1.0,,,
@@ -375,6 +382,7 @@ RIGHT_7,RIGHT_COL,cc,42,1,,SESSION,clip_bank_select,SURFACE,bank_group+7,interna
 RIGHT_7_FX,RIGHT_COL,cc,42,1,,FX,reserved,SURFACE,7,internal,surface.fx_page,int,1,,OFF,
 RIGHT_7_DECK,RIGHT_COL,cc,42,1,SHIFT,ANY,deck_select,COMPOSITION,7,osc,/composition/decks/7/select,int,1,,DECK_DIM|DECK_FULL,
 LOWER_8,LOWER_ROW,cc,27,1,,ANY,comp_focus,COMPOSITION,,osc,/composition/select,int,1,,COMP_DIM|COMP_FULL,
+LOWER_8_SHIFT,LOWER_ROW,cc,27,1,SHIFT,ANY,speed_reset,COMPOSITION,,internal,/composition/speed,float,1.0,,COMP_DIM|COMP_FULL,"Native WebSocket reset by parameter ID; read back actual speed, preserve focus."
 UPPER_8,UPPER_ROW,cc,109,1,,ANY,comp_disconnect_all,COMPOSITION,,osc,/composition/disconnectall,int,1,,COMP_DIM|COMP_FULL,
 UPPER_8_SHIFT,UPPER_ROW,cc,109,1,SHIFT,ANY,tempo_resync,COMPOSITION,,osc,/composition/tempocontroller/resync,int,1,,OFF|SOLO,
 ENC_8_SESSION,ENCODER,cc,78,1,,SESSION,param_relative,COMPOSITION,,osc,/composition/video/opacity,float,0.0-1.0,,,
@@ -394,7 +402,7 @@ ENC_8_TOUCH,ENCODER_TOUCH,note,7,1,,ANY,encoder_touch,CONTEXT,,internal,surface.
 ENC_TEMPO,ENCODER,cc,14,1,,ANY,param_relative,COMPOSITION,,osc,/composition/tempocontroller/tempo,float,0.0-1.0,,,"Silkscreen ""Tempo"". Touch note 10."
 ENC_SWING,ENCODER,cc,15,1,,ANY,param_relative,FOCUS,,osc,/composition/layers/{LAST_LAYER}/transition/duration,float,0.0-1.0,,,"Silkscreen ""Swing"". Transition duration of the focused layer. Touch note 9."
 ENC_MASTER,ENCODER,cc,79,1,,ANY,param_relative,COMPOSITION,,osc,/composition/master,float,0.0-1.0,,,"Silkscreen ""Master"" = Resolume master fader. Touch note 8."
-TOUCHSTRIP,TOUCHSTRIP,pitchbend,12,1,,ANY,param_absolute,CONTEXT,,osc,/composition/selectedclip/transport/position,float,0.0-1.0,,,"Scrub the selected Resolume clip from start to end. 14-bit pitch bend 0-16383. SysEx 17 10: no autoreturn."
+TOUCHSTRIP,TOUCHSTRIP,pitchbend,12,1,,ANY,param_absolute,CONTEXT,,osc,/composition/selectedclip/transport/position,float,0.0-1.0,,,Scrub the selected Resolume clip from start to end. 14-bit pitch bend 0-16383. SysEx 17 10: no autoreturn.
 PLAY,GLOBAL,cc,85,1,,ANY,tempo_pause_toggle,COMPOSITION,,osc,/composition/tempocontroller/pause,int,0|1,comp.paused,OK|OFF,RGB. Green while the BPM clock runs.
 RECORD,GLOBAL,cc,86,1,,ANY,recorder_toggle,COMPOSITION,,osc,/composition/recorder/record,int,0|1,comp.recording,OFF|WARN,RGB. Red while recording.
 STOP,GLOBAL,cc,29,1,,ANY,surface_panic,SURFACE,,internal,surface.panic,,,,WARN,"RGB. Panic: re-send User Mode SysEx + palette, full LED redraw, re-adopt Resolume state."

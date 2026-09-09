@@ -1,0 +1,683 @@
+{
+  "success": true,
+  "result": {
+    "sources": {
+      "logic/mod_surface": "\"\"\"Shared control resolution for the seven-layer Push surface.\"\"\"\nimport ast\nimport math\nimport re\nimport time\n\n\ndef _decode_relative(v):\n    v = int(v)\n    return v if 1 <= v <= 63 else v - 128 if 65 <= v <= 127 else 0\n\n\ndef _expression(expression, context):\n    def read(n):\n        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):\n            return n.value\n        if isinstance(n, ast.Name) and n.id in context:\n            return context[n.id]\n        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Add, ast.Sub, ast.Mult)):\n            a, b = read(n.left), read(n.right)\n            return a + b if isinstance(n.op, ast.Add) else a - b if isinstance(n.op, ast.Sub) else a * b\n        raise ValueError('Unsupported mapping expression: ' + str(expression))\n    return read(ast.parse(str(expression), mode='eval').body)\n\n\nclass Surface:\n    def __init__(self, ownerComp):\n        self.ownerComp = ownerComp\n        self.GridMode, self.EncoderPage = 'SESSION', 'OPACITY'\n        self.Bank, self.FxPage = 1, 1\n        self.FocusTarget = self.LastLayerTarget = 'LAYER1'\n        self.HeldFocusTarget = None\n        self.Modifiers = set()\n        self.EncoderValues, self.EncoderWritten = {}, {}\n        self.ClipScrollX = 0.0\n        self._index, self._cfg = {}, {}\n        self.LoadCfg()\n        self.BuildIndex()\n\n    def LoadCfg(self):\n        t = self.ownerComp.op('config/cfg_general')\n        self._cfg = {t[r, 'key'].val: t[r, 'value'].val for r in range(1, t.numRows)}\n        return self._cfg\n\n    def Cfg(self, key, default=None, cast=str):\n        v = self._cfg.get(key)\n        return cast(v) if v is not None else default\n\n    def BuildIndex(self):\n        t = self.ownerComp.op('config/map_controls')\n        columns = [t[0, c].val for c in range(t.numCols)]\n        self._index = {}\n        for r in range(1, t.numRows):\n            row = {c: t[r, c].val for c in columns}\n            self._index[(row['in_type'], int(row['in_number']), row['modifier'], row['grid_mode'])] = row\n        return len(self._index)\n\n    def LayerIds(self):\n        return [p.strip() for p in self.Cfg('layer_ids', '1,2,3,4,5,6,7').split(',') if p.strip()]\n\n    def Targets(self):\n        return ['LAYER%d' % i for i in range(1, len(self.LayerIds()) + 1)] + ['COMPOSITION']\n\n    def LayerFor(self, target):\n        m = re.fullmatch(r'LAYER(\\d+)', target or '')\n        i = int(m[1]) - 1 if m else -1\n        ids = self.LayerIds()\n        return ids[i] if 0 <= i < len(ids) else None\n\n    def Context(self):\n        return dict({'L%d' % i: int(v) for i, v in enumerate(self.LayerIds(), 1)},\n                    bank=self.Bank - 1, fx_page=self.FxPage - 1, bank_group=((self.Bank - 1) // 8) * 8)\n\n    def Slot(self, row):\n        return int(_expression(row['slot'], self.Context())) if row.get('slot') else None\n\n    def BankCount(self):\n        state = self.ownerComp.ResolumeState\n        columns = len((state.Composition or {}).get('columns', [])) if state else 0\n        return max(self.Cfg('bank_count', 16, int), math.ceil(columns / self.Cfg('clips_per_bank', 8, int)))\n\n    def FxPageCount(self):\n        return math.ceil(self.Cfg('fx_slots_per_target', 16, int) / self.Cfg('fx_visible_slots', 8, int))\n\n    def SetBank(self, bank):\n        self.Bank = max(1, min(self.BankCount(), int(bank)))\n\n    def SetGridMode(self, mode):\n        if mode in ('SESSION', 'FX'):\n            self.GridMode = mode\n\n    def ActiveModifier(self):\n        return 'SELECT' if 'SELECT' in self.Modifiers else 'SHIFT' if 'SHIFT' in self.Modifiers else ''\n\n    def Resolve(self, in_type, number, modifier, grid_mode):\n        encoder = in_type == 'cc' and 71 <= number <= 78\n        lookup = '' if encoder and modifier == 'SELECT' else modifier\n        for mod in ([lookup, ''] if lookup else ['']):\n            for mode in (grid_mode, 'ANY'):\n                row = self._index.get((in_type, int(number), mod, mode))\n                if row is not None:\n                    row = dict(row)\n                    if encoder and grid_mode == 'SESSION' and self.EncoderPage == 'MACRO':\n                        prefix = '/composition' + ('' if row['target'] == 'COMPOSITION' else '/layers/{L%d}' % (number - 70))\n                        row['control_path'] = prefix + '/dashboard/link%d' % (2 if lookup == 'SHIFT' else 1)\n                    return row\n        return None\n\n    def ResolveTemplate(self, control_path, target='', slot_expr='', fx_registry=None, focus_override=None):\n        if not control_path:\n            return ''\n        ctx = self.Context()\n        focus = focus_override or self.FocusTarget\n        if focus not in self.Targets():\n            raise ValueError('Unknown focus target: ' + str(focus))\n        ctx['FOCUS'] = '' if focus == 'COMPOSITION' else '/layers/' + self.LayerFor(focus)\n        ctx['LAST_LAYER'] = self.LayerFor(self.LastLayerTarget)\n        ctx['ACTIVE_CLIP'] = self.ownerComp.ResolumeState.ActiveClip(target) or 0 if self.ownerComp.ResolumeState else 0\n        if slot_expr:\n            ctx['slot'] = _expression(slot_expr, ctx)\n        def replace(m):\n            token = m[1]\n            fx = re.fullmatch(r'fx\\[([A-Z0-9]+):([^\\]]+)\\]\\.([a-z_]+)', token)\n            if fx:\n                entry = fx_registry.Registry.get('%s:%d' % (fx[1], int(_expression(fx[2], ctx)))) if fx_registry else None\n                value = entry.get(fx[3]) if entry else None\n                if value is None:\n                    raise ValueError('FX slot unavailable')\n                return str(value)\n            return str(ctx[token] if token in ctx else _expression(token, ctx))\n        return re.sub(r'\\{([^{}]+)\\}', replace, control_path)\n\n    def Available(self, row):\n        action = row['action']\n        state = self.ownerComp.ResolumeState\n        if action == 'reserved':\n            return False\n        if action == 'param_relative' and '{ACTIVE_CLIP}' in row['control_path']:\n            index = state.ActiveClip(row['target']) if state else None\n            clip = state.Clips.get((self.LayerFor(row['target']), index), {}) if state else {}\n            return bool(clip.get('speed') is not None)\n        if action in ('clip_connect', 'clip_select'):\n            clip = state.Clips.get((self.LayerFor(row['target']), self.Slot(row))) if state else None\n            return bool(clip and clip.get('present'))\n        if action == 'column_connect':\n            return bool(state and any(c.get('present') for (lid, ci), c in state.Clips.items() if ci == self.Slot(row)))\n        if action in ('fx_opacity_toggle', 'fx_bypass_toggle', 'fx_capture_on_value'):\n            registry = self.ownerComp.FxRegistry\n            entry = registry.Registry.get('%s:%d' % (row['target'], self.Slot(row))) if registry else None\n            return bool(entry and entry.get('bypassed_id' if action == 'fx_bypass_toggle' else 'opacity_id'))\n        if action == 'fx_page_select':\n            return self.Slot(row) <= self.FxPageCount()\n        if action == 'clip_bank_select':\n            return self.Slot(row) <= self.BankCount()\n        if action == 'deck_select':\n            return bool(state and self.Slot(row) <= len((state.Composition or {}).get('decks', [])))\n        return True\n\n    def ParameterValue(self, row):\n        path = self.ResolveTemplate(row['control_path'], row['target'], row['slot'], self.ownerComp.FxRegistry)\n        live = self.ownerComp.ResolumeState.Value(path) if self.ownerComp.ResolumeState else None\n        if path in self.EncoderValues and time.monotonic() - self.EncoderWritten.get(path, 0) < 0.4:\n            return self.EncoderValues[path]\n        return float(live) if live is not None else self.EncoderValues.get(path, 0.1 if path.endswith('/speed') else 0.0)\n\n    def LogDryRun(self, row, path, value):\n        log = self.ownerComp.op('logic/dryrun_log')\n        line = '%s action=%s transport=%s path=%s type=%s value=%s' % (row['id'], row['action'], row['transport'], path, row['value_type'], value)\n        if log is not None:\n            log.text = '\\n'.join((log.text.splitlines() + [line])[-500:])\n\n    def HandleInternal(self, row, value, ext):\n        action = row['action']\n        if action in ('modifier_shift', 'modifier_select'):\n            mod = 'SHIFT' if action == 'modifier_shift' else 'SELECT'\n            (self.Modifiers.add if value else self.Modifiers.discard)(mod)\n            return\n        if not value:\n            return\n        if action == 'grid_mode_toggle':\n            self.SetGridMode('FX' if self.GridMode == 'SESSION' else 'SESSION')\n        elif action == 'encoder_page_toggle':\n            self.EncoderPage = 'MACRO' if self.EncoderPage == 'OPACITY' else 'OPACITY'\n        elif action in ('clip_bank_prev', 'clip_bank_next'):\n            self.SetBank(self.Bank + (1 if action.endswith('next') else -1))\n        elif action == 'clip_bank_select':\n            self.SetBank(self.Slot(row))\n        elif action in ('fx_page_prev', 'fx_page_next'):\n            self.FxPage = max(1, min(self.FxPageCount(), self.FxPage + (1 if action.endswith('next') else -1)))\n        elif action == 'fx_page_select':\n            self.FxPage = self.Slot(row)\n        elif action == 'surface_panic':\n            ext.Panic()\n        elif action == 'surface_resync':\n            ext.Resync()\n        elif action == 'fx_registry_rescan':\n            ext.ResolumeState.Rebind()\n            ext.FxRegistry.Rescan()\n        elif action == 'push_mode_toggle':\n            ext.PushIO.SetMode('live' if ext.PushIO.PushMode else 'user')\n        elif action == 'ui_toggle':\n            panel = self.ownerComp.op('ui')\n            panel.par.display = int(not panel.par.display.eval())\n        elif action in ('display_toggle', 'display_fit_toggle', 'display_source_toggle') and ext.Display:\n            getattr(ext.Display, {'display_toggle': 'ToggleMode', 'display_fit_toggle': 'ToggleFit', 'display_source_toggle': 'ToggleSource'}[action])()\n\n    def OnReceiveMIDI(self, in_type, number, channel, value, ext):\n        row = self.Resolve(in_type, number, self.ActiveModifier(), self.GridMode)\n        if row is None or row['action'] == 'reserved':\n            return row\n        action = row['action']\n        if action in ('layer_focus', 'comp_focus') and not value:\n            if self.HeldFocusTarget == row['target']:\n                self.HeldFocusTarget = None\n            return row\n        if row['transport'] == 'internal' and action != 'fx_capture_on_value':\n            if self.Available(row):\n                self.HandleInternal(row, value, ext)\n            return row\n        if action != 'param_absolute' and not value:\n            return row\n        if not ext.Armed or not self.Available(row):\n            return row\n        if action in ('fx_opacity_toggle', 'fx_bypass_toggle', 'fx_capture_on_value'):\n            slot = self.Slot(row)\n            if action == 'fx_opacity_toggle':\n                ext.FxRegistry.TogglePad(row['target'], slot, ext.ResolumeOut)\n            elif action == 'fx_bypass_toggle':\n                ext.FxRegistry.ToggleBypass(row['target'], slot, ext.ResolumeOut)\n            else:\n                current = ext.ResolumeState.CurrentOpacity(row['target'], slot)\n                if current is not None:\n                    if self.Cfg('dry_run', '0') == '1':\n                        self.LogDryRun(row, row['control_path'], current)\n                    else:\n                        ext.FxRegistry.SetOnValue(row['target'], slot, current)\n            return row\n        if action in ('layer_focus', 'comp_focus'):\n            self.FocusTarget = self.HeldFocusTarget = row['target']\n            if self.LayerFor(row['target']):\n                self.LastLayerTarget = row['target']\n        if action == 'comp_bypass_toggle' and self.HeldFocusTarget:\n            path = self.ResolveTemplate('/composition{FOCUS}/bypassed', focus_override=self.HeldFocusTarget)\n        else:\n            path = self.ResolveTemplate(row['control_path'], row['target'], row['slot'], ext.FxRegistry)\n        if action == 'param_relative':\n            scale = self.Cfg('encoder_fine_scale', 0.2, float) if 'SELECT' in self.Modifiers else 1.0\n            output = max(0.0, min(1.0, self.ParameterValue(row) + _decode_relative(value) * self.Cfg('encoder_step', 0.005, float) * scale))\n            self.EncoderValues[path], self.EncoderWritten[path] = output, time.monotonic()\n        elif action == 'param_absolute':\n            output = value / 16383.0\n        elif action in ('clip_scroll_prev', 'clip_scroll_next'):\n            self.ClipScrollX = max(0.0, min(1.0, self.ClipScrollX + (0.1 if action.endswith('next') else -0.1)))\n            output = self.ClipScrollX\n        elif row['value'] == '0|1':\n            output = int(not bool(ext.ResolumeState.Value(path)))\n        else:\n            output = float(row['value'])\n        deck_change = action in ('deck_select', 'deck_prev', 'deck_next')\n        if deck_change:\n            ext.ResolumeOut.ClearPending()\n        ext.ResolumeOut.Send(row, path, output)\n        if self.Cfg('dry_run', '0') != '1':\n            ext.ResolumeState.Optimistic(path, output)\n            if deck_change:\n                ext.ResolumeState.Clips.clear()\n                run('args[0].FxRegistry.Rescan()', self.ownerComp, delayFrames=15)\n        return row\n",
+      "logic/mod_ledpainter": "\"\"\"Shared live descriptors for MIDI LEDs, the LCD and browser overlays.\"\"\"\nimport re\n\n\ndef _color(target):\n    return 'L' + target[5:] if target.startswith('LAYER') else 'COMP'\n\n\ndef Describe(ext, kind, number):\n    s, state = ext.Surface, ext.ResolumeState\n    row = s.Resolve(kind, number, s.ActiveModifier(), s.GridMode)\n    if row is None:\n        return None\n    target = s.FocusTarget if row['target'] == 'FOCUS' else row['target']\n    action = row['action']\n    data = {'kind': kind, 'number': number, 'id': row['id'], 'action': action, 'target': target,\n            'slot': s.Slot(row), 'available': s.Available(row), 'label': action.replace('_', ' '),\n            'palette': 'OFF', 'blink': False, 'active': False, 'value': None, 'path': ''}\n    try:\n        data['path'] = s.ResolveTemplate(row['control_path'], target, row['slot'], ext.FxRegistry)\n    except ValueError:\n        pass\n    if action == 'reserved':\n        data['label'] = ''\n        return data\n    if action.startswith('clip_') and action in ('clip_connect', 'clip_select'):\n        clip = state.Clips.get((s.LayerFor(target), data['slot']), {}) if state else {}\n        data.update(label=clip.get('name') or '%s %d' % (_color(target), data['slot']), active=bool(clip.get('connected')))\n        data['palette'] = _color(target) + '_FULL' if data['available'] else 'OFF'\n        data['blink'] = data['active']\n    elif action == 'column_connect':\n        clips = [v for (lid, ci), v in state.Clips.items() if ci == data['slot'] and v.get('present')] if state else []\n        playing = sum(bool(c.get('connected')) for c in clips)\n        data.update(label='Column %d' % data['slot'], active=playing > 0,\n                    palette='SCENE_FULL' if playing else 'SCENE_DIM' if clips else 'OFF')\n    elif action in ('fx_opacity_toggle', 'fx_bypass_toggle', 'fx_capture_on_value'):\n        entry = ext.FxRegistry.Registry.get('%s:%d' % (target, data['slot'])) if ext.FxRegistry else None\n        if entry:\n            value = entry.get('opacity_value', 0.0)\n            data.update(label=entry['label'], value=value, bypassed=bool(entry.get('bypassed_value')), active=value > 0.002)\n            data['palette'] = 'FX_BYPASSED' if data['bypassed'] else 'FX_ON' if value >= 0.98 else 'FX_MID' if value > 0.002 else 'FX_OFF'\n    elif action == 'param_relative':\n        data['value'] = s.ParameterValue(row) if data['available'] else None\n        link = re.search(r'dashboard/link(\\d+)$', data['path'])\n        data['label'] = (state.DashboardLinkName(target, int(link[1])) or 'Link ' + link[1]) if link else 'Speed' if data['path'].endswith('/speed') else 'Opacity' if 'opacity' in data['path'] else 'Tempo' if 'tempo' in data['path'] else 'Transition' if 'transition' in data['path'] else 'Master'\n        data['displayValue'] = '--' if data['value'] is None else '%.2fx' % state.NativeValue(data['path'],data['value']) if data['label']=='Speed' else '%d%%' % round(data['value']*100)\n    elif action in ('layer_focus', 'comp_focus'):\n        data.update(label=state.TargetNames.get(target, target), active=s.FocusTarget == target)\n        data['palette'] = _color(target) + ('_FULL' if data['active'] else '_DIM')\n        path = '/composition' + ('/layers/' + s.LayerFor(target) if target != 'COMPOSITION' else '') + '/bypassed'\n        if state.Value(path):\n            data['palette'] = 'WARN'\n    elif action in ('layer_clear', 'comp_disconnect_all', 'layer_solo_toggle', 'tempo_resync'):\n        data['label'] = 'Clear ' + _color(target) if action == 'layer_clear' else 'Disconnect all' if action == 'comp_disconnect_all' else 'Solo ' + _color(target) if action == 'layer_solo_toggle' else 'Tempo resync'\n        data['active'] = bool(state.Value(data['path'])) if action == 'layer_solo_toggle' else False\n        data['palette'] = 'SOLO' if data['active'] else _color(target) + '_DIM'\n    elif action in ('clip_bank_select', 'fx_page_select', 'deck_select'):\n        data['label'] = ('Bank ' if action == 'clip_bank_select' else 'FX page ' if action == 'fx_page_select' else 'Deck ') + str(data['slot'])\n        data['active'] = data['slot'] == (s.Bank if action == 'clip_bank_select' else s.FxPage if action == 'fx_page_select' else -1)\n        if action == 'deck_select' and data['available']:\n            deck = state.Composition['decks'][data['slot'] - 1]\n            data['active'] = bool(deck.get('selected', {}).get('value'))\n            data['label'] = deck.get('name', {}).get('value', data['label'])\n        data['palette'] = ('DECK_' if action == 'deck_select' else 'BANK_') + ('FULL' if data['active'] else 'DIM') if data['available'] else 'OFF'\n    else:\n        active = {'modifier_shift': 'SHIFT' in s.Modifiers, 'modifier_select': 'SELECT' in s.Modifiers,\n                  'grid_mode_toggle': s.GridMode == 'FX', 'encoder_page_toggle': s.EncoderPage == 'MACRO',\n                  'fx_page_prev': s.FxPage > 1, 'fx_page_next': s.FxPage < s.FxPageCount(),\n                  'clip_bank_prev': s.Bank > 1, 'clip_bank_next': s.Bank < s.BankCount()}\n        data['active'] = active.get(action, False)\n        data['palette'] = 'WHITE_FULL' if data['active'] else 'WHITE_DIM'\n        if action == 'surface_resync':\n            data.update(label='Syncing' if state.Syncing else 'Resync failed' if state.SyncError else 'Resync state', active=state.Syncing)\n            data['palette'] = 'WARN' if state.SyncError else 'WHITE_FULL' if state.Syncing else 'WHITE_DIM'\n        elif action == 'comp_bypass_toggle':\n            target = s.HeldFocusTarget or 'COMPOSITION'\n            path = '/composition' + ('/layers/' + s.LayerFor(target) if target != 'COMPOSITION' else '') + '/bypassed'\n            data.update(target=target, path=path, label='Mute ' + _color(target), active=bool(state.Value(path)))\n            data['palette'] = 'WARN' if data['active'] else 'COMP_DIM'\n        elif number in (29, 61, 85, 86, 89):\n            data['palette'] = 'COMP_DIM'\n    return data\n\n\ndef Paint(ext):\n    if not ext.Surface or not ext.PushIO or not ext.ResolumeState:\n        return {}\n    controls = {(k[0], k[1]) for k in ext.Surface._index}\n    out = {}\n    for kind, number in controls:\n        if kind not in ('note','cc') or (kind == 'cc' and number in (14,15,79,*range(71,79))):\n            continue\n        data = Describe(ext, kind, number)\n        if not data:\n            continue\n        index = ext.PushIO.PaletteIndex(data['palette'])\n        out[(kind, number)] = (0,index) if data['blink'] else index\n    return out\n\n\ndef Snapshot(ext):\n    s, state = ext.Surface, ext.ResolumeState\n    palette = s.ownerComp.op('config/map_palette')\n    colors = {palette[r,'name'].val: [int(palette[r,c].val) for c in ('r','g','b')] for r in range(1,palette.numRows)}\n    targets = []\n    start = (s.Bank-1)*8+1\n    for target in s.Targets():\n        lid = s.LayerFor(target)\n        clips = [dict(c,index=ci) for (layer,ci),c in state.Clips.items() if layer == lid]\n        effects = [dict(e) for e in ext.FxRegistry.Registry.values() if e['target'] == target] if ext.FxRegistry else []\n        prefix = '/composition' + ('/layers/' + lid if lid else '')\n        targets.append({'target':target,'short':_color(target),'name':state.TargetNames.get(target,target),\n                        'layerIndex':int(lid) if lid else None,'color':colors.get(_color(target)+'_FULL',[255,255,255]),\n                        'opacity':state.Value(prefix+'/video/opacity'), 'bypassed':bool(state.Value(prefix+'/bypassed')),\n                        'solo':bool(state.Value(prefix+'/solo')), 'playing':[c for c in clips if c['connected']],\n                        'loaded':sum(c['present'] for c in clips),'visibleLoaded':sum(c['present'] for c in clips if start<=c['index']<start+8),\n                        'effects':sorted(effects,key=lambda e:e['slot'])})\n    decks = (state.Composition or {}).get('decks', [])\n    deck = next((d.get('name',{}).get('value','') for d in decks if d.get('selected',{}).get('value')), '')\n    return {'armed':ext.Armed,'syncing':state.Syncing,'syncError':state.SyncError,'health':dict(ext.Health),'gridMode':s.GridMode,'bank':s.Bank,'bankCount':s.BankCount(),\n            'clipRange':[start,start+7],'fxPage':s.FxPage,'fxPageCount':s.FxPageCount(),'encoderPage':s.EncoderPage,\n            'focus':s.FocusTarget,'modifiers':sorted(s.Modifiers),'bindingError':state.BindingError,'palette':colors,\n            'targets':targets,'deck':deck,'deckCount':len(decks),'bpm':(state.Composition or {}).get('tempocontroller',{}).get('tempo',{}).get('value',0),\n            'master':state.Value('/composition/master'),'composition':(state.Composition or {}).get('name',{}).get('value',''),\n            'pads':[Describe(ext,'note',36+(7-r)*8+c) for r in range(8) for c in range(8)],\n            'encoders':[Describe(ext,'cc',cc) for cc in range(71,79)],\n            'upper':[Describe(ext,'cc',cc) for cc in range(102,110)],\n            'lower':[Describe(ext,'cc',cc) for cc in range(20,28)],\n            'right':[Describe(ext,'cc',cc) for cc in range(36,44)],\n            'buttons':[Describe(ext,'cc',cc) for cc in sorted({k[1] for k in s._index if k[0]=='cc'})\n                       if cc not in (*range(20,28),*range(36,44),*range(71,79),*range(102,110),14,15,79)]}\n"
+    },
+    "speed_meta": {
+      "/composition/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924187283
+      },
+      "/composition/layers/1/clips/1/transport/position/behaviour/speed": {
+        "value": 0.9999999999979089,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924758716
+      },
+      "/composition/layers/1/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924759216
+      },
+      "/composition/layers/1/clips/3/transport/position/behaviour/speed": {
+        "value": 0.038172391488181176,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924759917
+      },
+      "/composition/layers/1/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760638
+      },
+      "/composition/layers/1/clips/5/transport/position/behaviour/speed": {
+        "value": 0.012081707647522233,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761390
+      },
+      "/composition/layers/1/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762633
+      },
+      "/composition/layers/1/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924770228
+      },
+      "/composition/layers/1/clips/11/transport/position/behaviour/speed": {
+        "value": 0.9999999999990706,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764759
+      },
+      "/composition/layers/1/clips/12/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765422
+      },
+      "/composition/layers/1/clips/13/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924765946
+      },
+      "/composition/layers/1/clips/14/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766576
+      },
+      "/composition/layers/1/clips/15/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767082
+      },
+      "/composition/layers/1/clips/16/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767486
+      },
+      "/composition/layers/1/clips/17/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767838
+      },
+      "/composition/layers/1/clips/18/transport/position/behaviour/speed": {
+        "value": 2.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924768191
+      },
+      "/composition/layers/1/clips/19/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768550
+      },
+      "/composition/layers/1/clips/20/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768867
+      },
+      "/composition/layers/1/clips/21/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769005
+      },
+      "/composition/layers/1/clips/22/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769143
+      },
+      "/composition/layers/1/clips/24/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924769427
+      },
+      "/composition/layers/2/clips/1/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924758779
+      },
+      "/composition/layers/2/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924759280
+      },
+      "/composition/layers/2/clips/3/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924759992
+      },
+      "/composition/layers/2/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760713
+      },
+      "/composition/layers/2/clips/6/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762023
+      },
+      "/composition/layers/2/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762708
+      },
+      "/composition/layers/2/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763341
+      },
+      "/composition/layers/2/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924763929
+      },
+      "/composition/layers/2/clips/10/transport/position/behaviour/speed": {
+        "value": 0.9999999999990706,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764426
+      },
+      "/composition/layers/2/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924764851
+      },
+      "/composition/layers/2/clips/12/transport/position/behaviour/speed": {
+        "value": 0.9999999999990706,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765523
+      },
+      "/composition/layers/3/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924759344
+      },
+      "/composition/layers/3/clips/3/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760067
+      },
+      "/composition/layers/3/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760793
+      },
+      "/composition/layers/3/clips/5/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761465
+      },
+      "/composition/layers/3/clips/6/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762086
+      },
+      "/composition/layers/3/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762783
+      },
+      "/composition/layers/3/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763404
+      },
+      "/composition/layers/3/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764017
+      },
+      "/composition/layers/3/clips/10/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764514
+      },
+      "/composition/layers/3/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764914
+      },
+      "/composition/layers/3/clips/12/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765682
+      },
+      "/composition/layers/3/clips/13/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766027
+      },
+      "/composition/layers/3/clips/14/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766639
+      },
+      "/composition/layers/3/clips/15/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767145
+      },
+      "/composition/layers/4/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924759407
+      },
+      "/composition/layers/4/clips/3/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760130
+      },
+      "/composition/layers/4/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760877
+      },
+      "/composition/layers/4/clips/5/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761528
+      },
+      "/composition/layers/4/clips/6/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762149
+      },
+      "/composition/layers/4/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762846
+      },
+      "/composition/layers/4/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763467
+      },
+      "/composition/layers/4/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764080
+      },
+      "/composition/layers/4/clips/10/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764633
+      },
+      "/composition/layers/4/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765016
+      },
+      "/composition/layers/4/clips/12/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765745
+      },
+      "/composition/layers/4/clips/13/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766138
+      },
+      "/composition/layers/4/clips/14/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766702
+      },
+      "/composition/layers/4/clips/15/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767208
+      },
+      "/composition/layers/4/clips/16/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767575
+      },
+      "/composition/layers/4/clips/17/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767901
+      },
+      "/composition/layers/4/clips/18/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768293
+      },
+      "/composition/layers/4/clips/19/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768613
+      },
+      "/composition/layers/4/clips/20/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768942
+      },
+      "/composition/layers/4/clips/21/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769080
+      },
+      "/composition/layers/4/clips/22/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769236
+      },
+      "/composition/layers/4/clips/23/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769309
+      },
+      "/composition/layers/4/clips/24/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769547
+      },
+      "/composition/layers/4/clips/25/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924769610
+      },
+      "/composition/layers/5/clips/1/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924758842
+      },
+      "/composition/layers/5/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924759553
+      },
+      "/composition/layers/5/clips/3/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760304
+      },
+      "/composition/layers/5/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761025
+      },
+      "/composition/layers/5/clips/5/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761680
+      },
+      "/composition/layers/5/clips/6/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762212
+      },
+      "/composition/layers/5/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762909
+      },
+      "/composition/layers/5/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763530
+      },
+      "/composition/layers/5/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764143
+      },
+      "/composition/layers/5/clips/10/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764696
+      },
+      "/composition/layers/5/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765124
+      },
+      "/composition/layers/5/clips/12/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924765808
+      },
+      "/composition/layers/5/clips/13/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766254
+      },
+      "/composition/layers/5/clips/14/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766765
+      },
+      "/composition/layers/6/clips/1/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924758905
+      },
+      "/composition/layers/6/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924759641
+      },
+      "/composition/layers/6/clips/3/transport/position/behaviour/speed": {
+        "value": 1.6827339688584115,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924760367
+      },
+      "/composition/layers/6/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924761089
+      },
+      "/composition/layers/6/clips/5/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924761743
+      },
+      "/composition/layers/6/clips/6/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924762276
+      },
+      "/composition/layers/6/clips/7/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762972
+      },
+      "/composition/layers/6/clips/8/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763618
+      },
+      "/composition/layers/6/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924764232
+      },
+      "/composition/layers/6/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924765188
+      },
+      "/composition/layers/7/clips/1/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924758969
+      },
+      "/composition/layers/7/clips/2/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924759705
+      },
+      "/composition/layers/7/clips/3/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924760431
+      },
+      "/composition/layers/7/clips/4/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924761153
+      },
+      "/composition/layers/7/clips/5/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924761807
+      },
+      "/composition/layers/7/clips/6/transport/position/behaviour/speed": {
+        "value": 0.999999999995766,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924762339
+      },
+      "/composition/layers/7/clips/7/transport/position/behaviour/speed": {
+        "value": 0.999999999995766,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763047
+      },
+      "/composition/layers/7/clips/8/transport/position/behaviour/speed": {
+        "value": 0.9999999999957919,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924763709
+      },
+      "/composition/layers/7/clips/9/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924764363
+      },
+      "/composition/layers/7/clips/11/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924765305
+      },
+      "/composition/layers/7/clips/12/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924765872
+      },
+      "/composition/layers/7/clips/13/transport/position/behaviour/speed": {
+        "value": 0.999999999995766,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766326
+      },
+      "/composition/layers/7/clips/14/transport/position/behaviour/speed": {
+        "value": 0.9999999999957403,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924766853
+      },
+      "/composition/layers/7/clips/15/transport/position/behaviour/speed": {
+        "value": 0.9999999999957403,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767271
+      },
+      "/composition/layers/7/clips/16/transport/position/behaviour/speed": {
+        "value": 0.999999999995766,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924767638
+      },
+      "/composition/layers/7/clips/17/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924767965
+      },
+      "/composition/layers/7/clips/18/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 16.0,
+        "id": 1788924768357
+      },
+      "/composition/layers/7/clips/19/transport/position/behaviour/speed": {
+        "value": 1.0,
+        "min": 0.0,
+        "max": 10.0,
+        "id": 1788924768676
+      }
+    }
+  }
+}

@@ -113,7 +113,11 @@ check('OSC triggers/toggles typed int',
 check('float-typed OSC triggers are only the two known Resolume type bugs',
       [(r['id'], r['control_path']) for r in rows
        if r['transport'] == 'osc' and r['value_type'] == 'float' and r['value'] == '1.0'
+       and r['action'] != 'speed_reset'
        and r['control_path'] not in ALLOWED_FLOAT_TRIGGERS])
+check('speed reset uses native API reset dispatch',
+      [(r['id'], r['control_path']) for r in rows if r['action'] == 'speed_reset'
+       and (r['transport'] != 'internal' or not r['control_path'].endswith('/speed'))])
 check('WS booleans marked bool_as_int',
       [(r['id'], r['value_type']) for r in rows
        if r['transport'] == 'ws' and r['value'] == '0|1' and r['value_type'] != 'bool_as_int'])

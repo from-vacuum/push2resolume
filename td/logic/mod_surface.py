@@ -135,6 +135,11 @@ class Surface:
         state = self.ownerComp.ResolumeState
         if action == 'reserved':
             return False
+        if action == 'speed_reset':
+            path = self.ResolveTemplate(row['control_path'], row['target'])
+            meta = state.ParameterMeta.get(path, {}) if state else {}
+            lo, hi = meta.get('min'), meta.get('max')
+            return bool(meta.get('id')) and isinstance(lo, (int,float)) and isinstance(hi, (int,float)) and lo <= 1.0 <= hi and hi > lo
         if action == 'param_relative' and '{ACTIVE_CLIP}' in row['control_path']:
             index = state.ActiveClip(row['target']) if state else None
             clip = state.Clips.get((self.LayerFor(row['target']), index), {}) if state else {}
@@ -209,11 +214,15 @@ class Surface:
         if row is None or row['action'] == 'reserved':
             return row
         action = row['action']
+        if in_type == 'cc' and 20 <= number <= 27 and not value:
+            if self.HeldFocusTarget == self.Targets()[number-20]:
+                self.HeldFocusTarget = None
+            return row
         if action in ('layer_focus', 'comp_focus') and not value:
             if self.HeldFocusTarget == row['target']:
                 self.HeldFocusTarget = None
             return row
-        if row['transport'] == 'internal' and action != 'fx_capture_on_value':
+        if row['transport'] == 'internal' and action not in ('fx_capture_on_value','speed_reset'):
             if self.Available(row):
                 self.HandleInternal(row, value, ext)
             return row
@@ -243,7 +252,15 @@ class Surface:
             path = self.ResolveTemplate('/composition{FOCUS}/bypassed', focus_override=self.HeldFocusTarget)
         else:
             path = self.ResolveTemplate(row['control_path'], row['target'], row['slot'], ext.FxRegistry)
-        if action == 'param_relative':
+        if action == 'speed_reset':
+            meta = ext.ResolumeState.ParameterMeta[path]
+            if ext.ResolumeOut.ResetWSById(meta['id']):
+                ext.ResolumeOut.CancelOSC(path)
+                ext.ResolumeState.Pending.pop(path, None)
+                self.EncoderValues.pop(path, None)
+                self.EncoderWritten.pop(path, None)
+            return row
+        elif action == 'param_relative':
             scale = self.Cfg('encoder_fine_scale', 0.2, float) if 'SELECT' in self.Modifiers else 1.0
             output = max(0.0, min(1.0, self.ParameterValue(row) + _decode_relative(value) * self.Cfg('encoder_step', 0.005, float) * scale))
             self.EncoderValues[path], self.EncoderWritten[path] = output, time.monotonic()

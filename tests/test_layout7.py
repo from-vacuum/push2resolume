@@ -271,6 +271,74 @@ class MappingTests(unittest.TestCase):
         self.press(77,1)
         self.assertFalse(self.o.ResolumeOut._oscPending)
 
+    def test_shift_lower_resets_native_speed_in_both_modes(self):
+        c=composition()
+        c['speed']=parameter(3,777,max=10)
+        c['layers'][6]['clips'][0]['transport']['controls']['speed']=parameter(4,700001,max=16)
+        self.o.ResolumeState.OnMessage(json.dumps(c),self.o)
+        for mode in ('SESSION','FX'):
+            self.s.GridMode=mode
+            self.s.EncoderPage='MACRO'
+            self.s.FocusTarget='LAYER5'
+            self.s.Modifiers={'SHIFT'}
+            for cc in range(20,28):
+                self.o.ResolumeOut.ClearPending()
+                self.press(cc)
+                target=self.s.Targets()[cc-20]
+                path='/composition/speed' if cc==27 else f'/composition/layers/{cc-19}/clips/1/transport/position/behaviour/speed'
+                pid=self.o.ResolumeState.ParameterMeta[path]['id']
+                self.assertEqual(self.o.ResolumeOut._wsPending['/parameter/by-id/'+str(pid)],(None,'reset'))
+                self.assertFalse(self.o.ResolumeOut._oscPending)
+                self.assertNotIn(path,self.s.EncoderValues)
+                self.assertEqual(self.s.FocusTarget,'LAYER5')
+                if cc==26:self.assertEqual(self.o.ResolumeState.Clips[('7',1)]['speed'],4.0)
+                self.o.ResolumeOut.ClearPending()
+                self.press(cc,0)
+                self.assertFalse(self.o.ResolumeOut._oscPending or self.o.ResolumeOut._wsPending)
+
+    def test_speed_reset_is_inert_without_clip_and_guarded(self):
+        self.s.Modifiers={'SHIFT'}
+        self.o.ResolumeState.Clips[('1',1)]['connected']=False
+        self.press(20)
+        self.assertFalse(self.o.ResolumeOut._oscPending or self.o.ResolumeOut._wsPending)
+        self.o.Armed=False
+        self.press(21)
+        self.assertFalse(self.o.ResolumeOut._oscPending or self.o.ResolumeOut._wsPending)
+        self.o.Armed=True
+        self.s._cfg['dry_run']='1'
+        for row in self.o.nodes['config/cfg_general'].rows:
+            if row[0]=='dry_run':row[1]='1'
+        self.press(21)
+        self.assertFalse(self.o.ResolumeOut._oscPending or self.o.ResolumeOut._wsPending or self.s.EncoderValues)
+
+    def test_reset_uses_native_api_and_waits_for_actual_speed(self):
+        c=composition()
+        c['layers'][0]['clips'][0]['transport']['controls']['speed']=parameter(0.218291,100001,max=10)
+        self.o.ResolumeState.OnMessage(json.dumps(c),self.o)
+        self.s.Modifiers={'SHIFT'}
+        path='/composition/layers/1/clips/1/transport/position/behaviour/speed'
+        self.o.ResolumeOut._oscCache[path]=0.1
+        self.s.EncoderValues[path]=0.1
+        self.press(20)
+        self.assertNotIn(path,self.o.ResolumeOut._oscCache)
+        self.assertAlmostEqual(self.o.ResolumeState.Clips[('1',1)]['speed'],0.218291)
+        self.o.ResolumeOut.FlushWS()
+        self.assertEqual(self.o.nodes['net/ws1'].messages[-1],dict(action='reset',parameter='/parameter/by-id/100001'))
+        self.assertNotIn(path,self.o.ResolumeState.Pending)
+        self.o.ResolumeState.OnMessage(json.dumps(dict(type='parameter_get',id=100001,value=1.0,valuetype='ParamRange',min=0,max=10)),self.o)
+        self.assertEqual(self.o.ResolumeState.Clips[('1',1)]['speed'],1.0)
+        self.assertAlmostEqual(self.o.ResolumeState.Value(path),0.1)
+        self.press(20)
+        self.o.ResolumeOut.FlushWS()
+        self.assertEqual(sum(m['action']=='reset' for m in self.o.nodes['net/ws1'].messages),2)
+
+    def test_shift_changed_while_lower_held_clears_hold_on_release(self):
+        self.press(20)
+        self.assertEqual(self.s.HeldFocusTarget,'LAYER1')
+        self.press(49)
+        self.press(20,0)
+        self.assertIsNone(self.s.HeldFocusTarget)
+
     def test_null_transport_does_not_interrupt_fx_discovery(self):
         c=composition()
         c['layers'][0]['clips'][1]['transport']=None

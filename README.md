@@ -19,6 +19,12 @@ Dashboard link1 (Shift: link2). Shift on the opacity page controls the playing
 clip's speed in each layer, and Composition speed on encoder8. Speed is inert
 without an active clip. FX encoders control the focused target's Dashboard
 links1-8. Select applies fine adjustment to the active encoder parameter.
+Shift + a lower layer-select button resets that layer's active clip speed to
+1.00x; Shift + the lower Composition button resets Composition speed. This
+works in both grid modes, preserves focus, and is inert without a valid speed
+parameter. Ordinary lower-button presses still select their targets.
+Speed reset uses Resolume's native WebSocket reset, not normalized OSC (speed
+uses a nonlinear OSC curve). The LCD reflects the subsequent API readback.
 
 Device resyncs state from Resolume and forces a full LED/LCD repaint. Pending
 writes and temporary encoder/FX feedback are discarded; mode, focus, pages,

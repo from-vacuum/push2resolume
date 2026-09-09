@@ -44,6 +44,10 @@ def Describe(ext, kind, number):
         link = re.search(r'dashboard/link(\d+)$', data['path'])
         data['label'] = (state.DashboardLinkName(target, int(link[1])) or 'Link ' + link[1]) if link else 'Speed' if data['path'].endswith('/speed') else 'Opacity' if 'opacity' in data['path'] else 'Tempo' if 'tempo' in data['path'] else 'Transition' if 'transition' in data['path'] else 'Master'
         data['displayValue'] = '--' if data['value'] is None else '%.2fx' % state.NativeValue(data['path'],data['value']) if data['label']=='Speed' else '%d%%' % round(data['value']*100)
+    elif action == 'speed_reset':
+        data.update(label='Reset ' + _color(target) + ' speed to 1x', value=state.Value(data['path']))
+        data['displayValue'] = '%.2fx' % state.NativeValue(data['path'],data['value']) if data['value'] is not None else '--'
+        data['palette'] = _color(target) + '_DIM' if data['available'] else 'OFF'
     elif action in ('layer_focus', 'comp_focus'):
         data.update(label=state.TargetNames.get(target, target), active=s.FocusTarget == target)
         data['palette'] = _color(target) + ('_FULL' if data['active'] else '_DIM')
