@@ -32,7 +32,7 @@ def onReceiveMIDI(dat: midiinDAT, event: MIDIEvent):
 		return  # pads are one-shot triggers; release carries no signal here
 	if in_type == 'pitchbend':
 		number = 12
-		value = event.value14
+		value = int(event.byteData[1]) | (int(event.byteData[2]) << 7)
 	else:
 		number = event.index - 1
 		value = event.value
