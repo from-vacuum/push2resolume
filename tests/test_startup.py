@@ -211,6 +211,44 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(self.storage['refresh_status']['state'], 'failed')
         self.assertIn('broken extension', self.storage['refresh_status']['error'])
 
+    def _distinct_ops(self):
+        ops = {}
+        self.root.op.side_effect = lambda path: ops.setdefault(path, Mock())
+        return ops
+
+    def _midi_active(self, ops):
+        return [ops[p].par.active for p in ('midi/midiin1', 'midi/midiout1')]
+
+    def test_refresh_bounces_push_midi_ports_and_reopens_them(self):
+        ops = self._distinct_ops()
+        with patch('builtins.print'):
+            self.module['refresh'](self.root)
+            token = self.storage['refresh_status']['token']
+            self.assertEqual(self._midi_active(ops), [0, 0])
+            self.assertEqual(ops['net/ws1'].par.active, 0)
+            self.module['_finish'](self.root, token)
+        self.assertEqual(self._midi_active(ops), [1, 1])
+        self.ext.Boot.assert_called_once()
+
+    def test_midi_ports_reopen_even_when_refresh_fails(self):
+        ops = self._distinct_ops()
+        self.root.initializeExtensions.side_effect = RuntimeError('broken extension')
+        with patch('builtins.print'):
+            self.module['refresh'](self.root)
+        self.assertEqual(self.storage['refresh_status']['state'], 'failed')
+        self.assertEqual(self._midi_active(ops), [1, 1])
+
+    def test_midi_ports_reopen_when_extensions_never_initialize(self):
+        ops = self._distinct_ops()
+        self.ext.Surface = None
+        with patch('builtins.print'):
+            self.module['refresh'](self.root)
+            token = self.storage['refresh_status']['token']
+            self.module['_finish'](self.root, token, 10)
+        self.assertEqual(self.storage['refresh_status']['state'], 'failed')
+        self.assertEqual(self._midi_active(ops), [1, 1])
+        self.ext.Boot.assert_not_called()
+
     def test_layer_binding_failure_reports_recovery_instruction(self):
         self.storage['refresh_status'] = {'token': 1}
         self.ext.Health['layers_ok'] = False

@@ -8,11 +8,35 @@ def onPulse(par):
     par.owner.Refresh()
 
 
+_PUSH_MIDI = ('midi/midiin1', 'midi/midiout1')
+
+
+def _setPushMidiActive(root, state):
+    """Bounce the Push MIDI ports so Refresh drops a stale or half-open endpoint
+    and re-opens it, instead of rebuilding everything around a dead device.
+
+    Restored on EVERY exit path, including failure: PushIO.BindDevice() re-arms
+    midiin1 but never touches midiout1, so a Refresh that died between the two
+    would leave pads, encoders and LEDs silently dark with no error anywhere.
+    The bounce also finishes before Boot(), so it never overlaps SetMode()'s own
+    deactivate/reactivate cycle -- that one guards a device re-enumeration race
+    that has been observed to crash TD.
+    """
+    for path in _PUSH_MIDI:
+        o = root.op(path)
+        if o is not None and hasattr(o.par, 'active'):
+            o.par.active = state
+
+
 def _current(root, token):
     return root.fetch('refresh_status', {}, search=False).get('token') == token
 
 
 def _fail(root, token, error):
+    try:
+        _setPushMidiActive(root, 1)
+    except Exception:
+        pass
     if not _current(root, token):
         return
     root.store('refresh_status', dict(token=token, state='failed', error=str(error)))
@@ -34,6 +58,7 @@ def refresh(root):
         if root.ext.PushResolume.Display:
             root.ext.PushResolume.Display.StopHelper()
         root.op('net/ws1').par.active = 0
+        _setPushMidiActive(root, 0)
         root.initializeExtensions()
         run("args[0].op('logic/parexec_refresh').module._finish(args[0], args[1])",
             root, token, delayFrames=15)
@@ -45,6 +70,9 @@ def _finish(root, token, attempt=0):
     if not _current(root, token):
         return
     try:
+        # Re-open the ports before anything can bail out below, and before
+        # Boot() binds the device.
+        _setPushMidiActive(root, 1)
         ready = all(getattr(root.ext.PushResolume, name) is not None for name in
                     ('Surface', 'PushIO', 'ResolumeOut', 'ResolumeState', 'FxRegistry', 'Display'))
         if not ready:
