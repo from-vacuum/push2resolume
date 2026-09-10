@@ -111,7 +111,11 @@ shutdown cancels pending reconnects so closing the project cannot respawn it.
 If MIDI output fails, the controller marks Push disconnected and stops LED
 writes instead of raising an error every tick. Reconnect the device and pulse
 Refresh to retry initialization. LCD backend failures are throttled, and the
-TCP client is disabled between delayed reconnect attempts.
+TCP client is disabled between delayed reconnect attempts. The helper records
+its PID, parent TD PID and port under `.embody/`. On startup it terminates a
+recorded helper only when the parent is dead and the process command line is
+verified as this display script. Live or unverified port owners are left alone
+and reported as `[Push LCD]` errors in the TouchDesigner Textport.
 
 Text LCD mode shows target names, encoder labels/values, clip playback, loaded
 slot counts, effect lists with opacity/bypass state, bank/page, focus, deck, BPM

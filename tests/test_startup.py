@@ -1,4 +1,5 @@
 import ast
+import json
 import os
 from pathlib import Path
 import runpy
@@ -6,7 +7,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, mock_open, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +35,7 @@ class StartupTests(unittest.TestCase):
         tree = ast.parse((ROOT / 'td/display/mod_display.py').read_text())
         node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Display')
         constants = [n for n in tree.body if isinstance(n, ast.Assign)]
-        self.globals = dict(os=os, sys=sys, subprocess=subprocess, run=self.run,
+        self.globals = dict(os=os, json=json, sys=sys, subprocess=subprocess, run=self.run,
                             project=SimpleNamespace(folder=str(ROOT)), debug=Mock(),
                             app=SimpleNamespace(binFolder='C:/Program Files/Derivative/TD/bin'),
                             np=Mock())
@@ -78,11 +79,34 @@ class StartupTests(unittest.TestCase):
         args, kwargs = popen.call_args
         self.assertTrue(os.path.isabs(args[0][0]))
         self.assertEqual(args[0][1], str(ROOT / 'display/push2_display_helper.py'))
+        self.assertEqual(args[0][2:5], ['--serve', '9871', '--parent-pid'])
+        self.assertEqual(args[0][5], str(os.getpid()))
+        owner_index = args[0].index('--owner-file')
+        status_index = args[0].index('--status-file')
+        self.assertTrue(args[0][owner_index + 1].endswith(
+            '.embody/push2_display_helper_9871.owner.json'))
+        self.assertTrue(args[0][status_index + 1].endswith(
+            '.embody/push2_display_helper_9871.status.json'))
         self.assertEqual(kwargs['cwd'], str(ROOT))
         self.assertEqual(self.net.par.active, 0)
         self.assertEqual(self.run.call_args.kwargs['delayFrames'], 30)
         self.display._connect(self.display._connectGeneration)
         self.assertEqual(self.net.par.active, 1)
+
+    def test_dead_startup_reports_status_to_textport_and_throttles_retry(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = 2
+        self.display.process = process
+        self.display._helperStatusPath = '/tmp/push2-status.json'
+        self.display._connectGeneration = 7
+        status = json.dumps({'state': 'error', 'pid': 4321,
+                             'message': 'LCD port 9872 is already in use'})
+        with patch('builtins.open', mock_open(read_data=status)):
+            self.display._connect(7)
+        self.assertTrue(self.display._reconnectPending)
+        self.assertEqual(self.run.call_args.kwargs['delayFrames'], 90)
+        self.assertIn('LCD port 9872 is already in use',
+                      str(self.globals['debug'].call_args))
 
     def test_running_helper_with_stale_socket_reconnects_without_new_process(self):
         self.display.process = Mock()

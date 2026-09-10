@@ -10,7 +10,10 @@ descriptor dump on 2026-09-09 (interface 0, "Push 2 Display", bulk OUT 0x01).
 """
 
 import glob
+import json
 import os
+import signal
+import subprocess
 import sys
 import struct
 import socket
@@ -84,6 +87,7 @@ def gradient_frame():
 
 WRITE_CHUNK_BYTES = 16384  # manual: "typically sent using larger buffers, e.g. 16kbytes each"
 RECONNECT_DELAY_S = 1.0
+PARENT_POLL_S = 1.0
 
 LIBUSB_DIR_ENV = "PUSH2_LIBUSB_DIR"
 LIBUSB_DLL_NAME = "libusb-1.0.dll"
@@ -256,21 +260,175 @@ def _serve_connection(conn, backend):
             return
 
 
-def serve(port, force_stub=False):
+def _process_is_alive(pid):
+    """Whether *pid* still names a live process, without extra dependencies.
+
+    The helper normally dies through Display.StopHelper. This guard covers the
+    less polite case where TouchDesigner crashes or is force-quit and therefore
+    never gets to terminate its child. Windows needs a real process-handle
+    check: os.kill(pid, 0) is POSIX behavior and is not a portable liveness
+    probe there.
+    """
+    if pid is None:
+        return True
+    if sys.platform.startswith("win"):
+        import ctypes
+
+        synchronize = 0x00100000
+        wait_timeout = 0x00000102
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(synchronize, False, int(pid))
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == wait_timeout
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _process_matches_helper(pid, script_path, port):
+    """Prove a recorded PID is this helper before it is ever terminated."""
+    try:
+        if sys.platform.startswith("win"):
+            command = subprocess.check_output([
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                "(Get-CimInstance Win32_Process -Filter \"ProcessId = %d\").CommandLine" % int(pid),
+            ], timeout=2, text=True, stderr=subprocess.DEVNULL)
+        else:
+            command = subprocess.check_output(
+                ["ps", "-p", str(int(pid)), "-o", "command="],
+                timeout=2, text=True, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    normalized_command = os.path.normcase(os.path.normpath(command.strip()))
+    normalized_script = os.path.normcase(os.path.normpath(os.path.realpath(script_path)))
+    return (normalized_script in normalized_command and
+            "--serve" in command and str(int(port)) in command)
+
+
+def _terminate_process(pid):
+    if sys.platform.startswith("win"):
+        import ctypes
+
+        process_terminate = 0x0001
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(process_terminate, False, int(pid))
+        if not handle:
+            raise OSError("could not open process %s for termination" % pid)
+        try:
+            if not kernel32.TerminateProcess(handle, 1):
+                raise OSError("could not terminate process %s" % pid)
+        finally:
+            kernel32.CloseHandle(handle)
+    else:
+        os.kill(int(pid), signal.SIGTERM)
+
+
+def _read_json(path):
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            value = json.load(source)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_json(path, value):
+    if not path:
+        return
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    temporary = "%s.tmp.%s" % (path, os.getpid())
+    with open(temporary, "w", encoding="utf-8") as destination:
+        json.dump(value, destination, sort_keys=True)
+        destination.write("\n")
+    os.replace(temporary, path)
+
+
+def _remove_owned_record(path, pid):
+    if path and _read_json(path).get("pid") == int(pid):
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
+def _reap_stale_owner(owner_file, script_path, port):
+    """Stop only a positively identified helper orphaned by a dead TD parent."""
+    record = _read_json(owner_file)
+    if not record or record.get("port") != int(port):
+        return None
+    try:
+        pid = int(record["pid"])
+        parent_pid = int(record["parent_pid"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not _process_is_alive(pid):
+        _remove_owned_record(owner_file, pid)
+        return None
+    if _process_is_alive(parent_pid):
+        raise RuntimeError(
+            "LCD port %s is owned by helper PID %s for live parent PID %s" %
+            (port, pid, parent_pid))
+    if not _process_matches_helper(pid, script_path, port):
+        raise RuntimeError(
+            "LCD port %s has stale owner PID %s, but its command line could not be verified; "
+            "refusing to terminate it" % (port, pid))
+    _terminate_process(pid)
+    deadline = time.monotonic() + 2.0
+    while _process_is_alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if _process_is_alive(pid):
+        raise RuntimeError("stale LCD helper PID %s did not exit" % pid)
+    _remove_owned_record(owner_file, pid)
+    print("[push2_display_helper] terminated stale helper PID %s" % pid)
+    return pid
+
+
+def serve(port, force_stub=False, parent_pid=None, owner_file=None, status_file=None):
     """TCP server: TD (client) connects and streams length-prefixed frames
     (4-byte big-endian length + payload). One connection at a time; TD
     reconnects if this process restarts. The USB backend is (re)opened
     fresh for each new connection -- cheap (milliseconds), and it's what
     makes an unplug/replug recover automatically on the next TD reconnect
     instead of wedging this process onto a dead device handle forever."""
+    script_path = os.path.realpath(__file__)
+    _write_json(status_file, dict(state="starting", pid=os.getpid(), port=int(port)))
+    _reap_stale_owner(owner_file, script_path, port)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("127.0.0.1", port))
-    srv.listen(1)
-    print(f"[push2_display_helper] listening on 127.0.0.1:{port}")
     try:
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            srv.bind(("127.0.0.1", port))
+        except OSError as error:
+            raise RuntimeError(
+                "LCD port %s is already in use by an untracked or active process: %s" %
+                (port, error)) from error
+        srv.listen(1)
+        if parent_pid is not None:
+            srv.settimeout(PARENT_POLL_S)
+        owner = dict(state="listening", pid=os.getpid(), parent_pid=parent_pid,
+                     port=int(port), script=script_path)
+        _write_json(owner_file, owner)
+        _write_json(status_file, owner)
+        print(f"[push2_display_helper] listening on 127.0.0.1:{port}")
         while True:
-            conn, addr = srv.accept()
+            if not _process_is_alive(parent_pid):
+                print(f"[push2_display_helper] parent {parent_pid} exited; shutting down")
+                break
+            try:
+                conn, addr = srv.accept()
+            except socket.timeout:
+                continue
             print(f"[push2_display_helper] client connected from {addr}")
             try:
                 backend = make_backend(force_stub=force_stub)
@@ -291,14 +449,29 @@ def serve(port, force_stub=False):
         pass
     finally:
         srv.close()
+        _remove_owned_record(owner_file, os.getpid())
 
 
 def main():
     force_stub = "--stub" in sys.argv
     if "--serve" in sys.argv:
         port = int(sys.argv[sys.argv.index("--serve") + 1])
-        serve(port, force_stub=force_stub)
-        return
+        parent_pid = (int(sys.argv[sys.argv.index("--parent-pid") + 1])
+                      if "--parent-pid" in sys.argv else None)
+        owner_file = (sys.argv[sys.argv.index("--owner-file") + 1]
+                      if "--owner-file" in sys.argv else None)
+        status_file = (sys.argv[sys.argv.index("--status-file") + 1]
+                       if "--status-file" in sys.argv else None)
+        try:
+            serve(port, force_stub=force_stub, parent_pid=parent_pid,
+                  owner_file=owner_file, status_file=status_file)
+        except Exception as error:
+            message = str(error)
+            _write_json(status_file, dict(state="error", pid=os.getpid(),
+                                          port=port, message=message))
+            print("[push2_display_helper] startup failed: " + message)
+            return 2
+        return 0
     backend = make_backend(force_stub=force_stub)
     try:
         print("[push2_display_helper] sending solid red test frame")
@@ -312,4 +485,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

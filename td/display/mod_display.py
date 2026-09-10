@@ -6,6 +6,7 @@ lives in a separate process.
 """
 
 import os
+import json
 import struct
 import subprocess
 import sys
@@ -146,6 +147,9 @@ class Display:
 		self._stopping = False
 		self._connectGeneration = 0
 		self._reconnectPending = False
+		self._helperOwnerPath = ''
+		self._helperStatusPath = ''
+		self._lastStartError = ''
 		self.mode = ownerComp.fetch('layout7_ui', {}, search=False).get('display', 'text')
 
 	def Cfg(self, key, default=None, cast=str):
@@ -212,6 +216,10 @@ class Display:
 		python_path = os.path.normpath(os.path.join(project.folder, self.Cfg('display_helper_python_' + plat, sys.executable)))
 		script_path = os.path.normpath(os.path.join(project.folder, self.Cfg('display_helper_script', 'display/push2_display_helper.py')))
 		port = self.Cfg('display_helper_port', 9871, int)
+		runtime_dir = os.path.join(project.folder, '.embody')
+		stem = 'push2_display_helper_%d' % port
+		self._helperOwnerPath = os.path.join(runtime_dir, stem + '.owner.json')
+		self._helperStatusPath = os.path.join(runtime_dir, stem + '.status.json')
 		env = os.environ.copy()
 		if plat == 'darwin':
 			libusb_dir = self.Cfg('display_helper_libusb_dir_darwin', '')
@@ -227,11 +235,30 @@ class Display:
 				env['PUSH2_LIBUSB_DIR'] = os.path.normpath(libusb_dir)
 		try:
 			self.process = subprocess.Popen(
-				[python_path, script_path, '--serve', str(port)], env=env, cwd=project.folder)
+				[python_path, script_path, '--serve', str(port), '--parent-pid', str(os.getpid()),
+				 '--owner-file', self._helperOwnerPath, '--status-file', self._helperStatusPath],
+				env=env, cwd=project.folder)
 		except OSError as e:
-			debug('Display.StartHelper failed:', e)
+			self._reportStartFailure('could not launch helper: ' + str(e))
 			return
 		self._queueConnect()
+
+	def _reportStartFailure(self, fallback=''):
+		message = fallback
+		try:
+			with open(self._helperStatusPath, 'r', encoding='utf-8') as source:
+				status = json.load(source)
+			if (status.get('state') == 'error' and self.process is not None and
+					status.get('pid') == self.process.pid):
+				message = status.get('message') or message
+		except (OSError, ValueError):
+			pass
+		if not message:
+			code = self.process.poll() if self.process is not None else 'unknown'
+			message = 'display helper exited during startup (code %s)' % code
+		if message != self._lastStartError:
+			debug('[Push LCD] ' + message)
+			self._lastStartError = message
 
 	def _queueConnect(self):
 		# TD must cook with active=0 before reopening a saved/stale TCP client.
@@ -246,7 +273,10 @@ class Display:
 		if self.IsHelperAlive():
 			self._net().par.active = 1
 		else:
-			self.StartHelper()
+			self._reportStartFailure()
+			if not self._reconnectPending:
+				self._reconnectPending = True
+				run("args[0]._attemptReconnect()", self, delayFrames=90)
 
 	def StopHelper(self):
 		"""Delayed-quit companion to PushResolumeExt.CloseProject -- called
@@ -265,6 +295,7 @@ class Display:
 	def OnConnect(self):
 		if self._stopping:
 			return
+		self._lastStartError = ''
 		self.connected = True
 
 	def OnClose(self):

@@ -50,6 +50,46 @@ class BackendSelectionTests(unittest.TestCase):
 
 
 class ServerRecoveryTests(unittest.TestCase):
+    def test_stale_verified_helper_is_terminated(self):
+        record = {'pid': 111, 'parent_pid': 222, 'port': 9872}
+        with patch.object(helper, '_read_json', return_value=record), \
+                patch.object(helper, '_process_is_alive', side_effect=[True, False, False, False]), \
+                patch.object(helper, '_process_matches_helper', return_value=True), \
+                patch.object(helper, '_terminate_process') as terminate, \
+                patch.object(helper.os, 'unlink'), patch('builtins.print'):
+            reaped = helper._reap_stale_owner('/tmp/owner.json', __file__, 9872)
+        self.assertEqual(reaped, 111)
+        terminate.assert_called_once_with(111)
+
+    def test_unverified_stale_pid_is_reported_not_terminated(self):
+        record = {'pid': 111, 'parent_pid': 222, 'port': 9872}
+        with patch.object(helper, '_read_json', return_value=record), \
+                patch.object(helper, '_process_is_alive', side_effect=[True, False]), \
+                patch.object(helper, '_process_matches_helper', return_value=False), \
+                patch.object(helper, '_terminate_process') as terminate:
+            with self.assertRaisesRegex(RuntimeError, 'refusing to terminate'):
+                helper._reap_stale_owner('/tmp/owner.json', __file__, 9872)
+        terminate.assert_not_called()
+
+    def test_live_helper_owner_is_reported_not_terminated(self):
+        record = {'pid': 111, 'parent_pid': 222, 'port': 9872}
+        with patch.object(helper, '_read_json', return_value=record), \
+                patch.object(helper, '_process_is_alive', return_value=True), \
+                patch.object(helper, '_terminate_process') as terminate:
+            with self.assertRaisesRegex(RuntimeError, 'live parent PID 222'):
+                helper._reap_stale_owner('/tmp/owner.json', __file__, 9872)
+        terminate.assert_not_called()
+
+    def test_parent_exit_closes_orphaned_listener(self):
+        server = Mock()
+        with patch.object(helper.socket, 'socket', return_value=server), \
+                patch.object(helper, '_process_is_alive', return_value=False), \
+                patch('builtins.print'):
+            helper.serve(9872, parent_pid=1234)
+        server.settimeout.assert_called_once_with(helper.PARENT_POLL_S)
+        server.accept.assert_not_called()
+        server.close.assert_called_once()
+
     def test_missing_hardware_throttles_reconnections_and_closes_socket(self):
         server, conn = Mock(), Mock()
         server.accept.side_effect = [(conn, ('127.0.0.1', 12345)), KeyboardInterrupt()]
