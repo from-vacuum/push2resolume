@@ -1,5 +1,5 @@
 """webclientDAT callbacks -- REST bootstrap (DESIGN.md 5 step 10) and manual
-Rescan (Shift+Stop)."""
+Rescan (Shift+Device)."""
 from typing import Dict, Any
 
 

@@ -114,13 +114,18 @@ class PushIO:
 		self.SendExclusive(0x00, 0x21, 0x1D, 0x01, 0x01, 0x08, lsb, msb)
 
 	def PaletteIndex(self, name):
-		t = self.ownerComp.op('config/map_palette')
-		for r in range(1, t.numRows):
-			if t[r, 'name'].val == name:
-				return int(t[r, 'palette_index'].val)
-		return 0
+		# Cached: called once per repainted LED at 30 Hz, and each miss walked
+		# the palette table cell by cell. WritePalette() drops the cache, so a
+		# reloaded or rewritten palette is picked up.
+		cache = getattr(self, '_paletteIndex', None)
+		if not cache:
+			t = self.ownerComp.op('config/map_palette')
+			cache = self._paletteIndex = {t[r, 'name'].val: int(t[r, 'palette_index'].val)
+			                              for r in range(1, t.numRows)}
+		return cache.get(name, 0)
 
 	def WritePalette(self):
+		self._paletteIndex = {}
 		t = self.ownerComp.op('config/map_palette')
 		for r in range(1, t.numRows):
 			idx = int(t[r, 'palette_index'].val)

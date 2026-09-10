@@ -8,8 +8,10 @@
 
 Current contract: Session = 7 layers x 8 clips + 8 column launches; FX = 8
 targets x 8 slots per page, 2 pages, 16 logical slots per target. Seven indices
-are validated against saved layer identities. Shift+Stop explicitly rebinds
-after structural changes. LCD, LEDs and overlay share resolved descriptors.
+are validated against saved layer identities, which are adopted from running
+Resolume when they no longer match (cfg `layer_binding_mode`; `strict` restores
+the old blocking alarm). Shift+Device, or `Rebind()`, rebinds explicitly.
+LCD, LEDs and overlay share resolved descriptors.
 Session encoders cover opacity, a Mix macro page and Shift active-clip speed.
 FX encoders cover the focused target's Dashboard. Text LCD is a native 960x160
 raster with eight aligned columns. Source/config updates require Envoy; the

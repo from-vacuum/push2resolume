@@ -50,15 +50,51 @@ parameter. Ordinary lower-button presses still select their targets.
 Speed reset uses Resolume's native WebSocket reset, not normalized OSC (speed
 uses a nonlinear OSC curve). The LCD reflects the subsequent API readback.
 
+Resets escalate in two tiers, both on **Device** (cc110); `Stop` (cc29) is
+deliberately unmapped and dark.
+
+| Gesture | Tier | Does | Preserves |
+|---|---|---|---|
+| `Device` | soft | Re-read authoritative state from Resolume, repaint LEDs and LCD. Disarmed during the read; a failed read warns and stays disarmed until fresh state arrives. | View, layer bindings, captured FX values |
+| `Shift`+`Device` | hard | Drop the layer identity bindings, then pulse `Refresh`: extensions rebuilt, Push re-initialized, LCD helper restarted, WebSocket reconnected, FX registry rebuilt. | FX pad pins (delete `config/fx_pins.csv` to reset those) |
+
+The hard tier defers its Refresh pulse by one frame, because Refresh calls
+`initializeExtensions()` and that must never run with the extension's own method
+still on the call stack. `op('/project1/PUSH_RESOLUME').HardReset()` and
+`.Rebind()` are the software equivalents, so neither tier depends on a connected
+Push. The `surface_panic` and `fx_registry_rescan` actions still exist in the
+vocabulary if you want to remap `Stop` to one of them in
+`config/map_controls.csv`.
+
 Device resyncs state from Resolume and forces a full LED/LCD repaint. Pending
 writes and temporary encoder/FX feedback are discarded; mode, focus, pages,
 layer identity bindings and captured FX values stay intact. Controls are
 disarmed during the read. Failed reads show a warning and remain disarmed until
-fresh state arrives. Shift+Stop remains the explicit layer-identity rebind.
-When moving a saved `.toe` between machines with different Resolume layer
-IDs/order, verify the current seven-layer order and press Shift+Stop to adopt
-it. Refresh deliberately preserves bindings and reports the exact mismatch;
-it does not silently assign controls to different layers.
+fresh state arrives.
+
+Layer identity bindings follow running Resolume. Bindings record which layer id
+each configured index resolved to, and they are saved in the `.toe` — so they
+outlive the composition they describe: a file moved between machines, or a
+composition reloaded after layers were added, arrives holding identities that no
+longer exist. `layer_binding_mode` (`config/cfg_general.csv`, default `adopt`)
+governs what happens then. On `adopt`, a mismatch takes the live identities,
+drops the now-meaningless optimistic/encoder feedback and queued writes, and
+flashes `RE-BOUND` on the LCD for 20 s (`binding_notice` in `ui/mirror_state`,
+`bindingNotice` in the overlay snapshot and the Refresh report) — the surface
+stays armed. Moving a `.toe` between machines therefore needs no ceremony.
+
+`layer_binding_mode=strict` restores the previous blocking alarm: `Layer
+identities changed` on the LCD, disarmed until an explicit rebind. Even then it
+only fires for a change **within** the composition the bindings were taken
+from — bindings from a different composition, or saved before provenance was
+recorded, are always adopted, because they describe layers that are not on
+screen at all. Provenance is the composition **name** (`composition` in
+`ui/mirror_state`), not a parameter id, since whether ids survive a composition
+save/reload is undocumented (DESIGN.md R21).
+
+`Shift`+`Device` is the explicit rebind, and
+`op('/project1/PUSH_RESOLUME').Rebind()` does the same from the Textport or
+Envoy, so rebinding never depends on a connected Push.
 
 For full recovery, pulse `Refresh` on `/project1/PUSH_RESOLUME` (or call
 `op('/project1/PUSH_RESOLUME').Refresh()` in the Textport). This rebuilds the

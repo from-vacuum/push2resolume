@@ -1,4 +1,17 @@
-"""Normalize API state and keep explicit layer identity bindings."""
+"""Normalize API state and keep layer identity bindings in step with Resolume.
+
+Bindings record which Resolume layer id each configured index resolved to, so a
+structural edit cannot silently move controls onto a different layer. They are
+saved in the .toe, which means they outlive the composition they describe -- a
+file moved between machines, or a composition reloaded after layers were added,
+arrives with identities that no longer exist. So the default policy is to ADOPT
+the live identities (cfg layer_binding_mode=adopt), clear the stale per-target
+feedback, and report a transient notice; the surface follows running Resolume
+instead of disarming until someone presses Shift+Device on the hardware.
+cfg layer_binding_mode=strict restores the blocking alarm, and even then only
+for a change WITHIN the composition the bindings were taken from -- bindings of
+unknown or different provenance are always adopted.
+"""
 import json
 import re
 import time
@@ -28,7 +41,9 @@ class ResolumeState:
         self.Syncing = False
         self.SyncError = ''
         self.Bindings = dict(ownerComp.fetch('layout7_bindings', {}, search=False))
+        self.BoundComposition = str(ownerComp.fetch('layout7_composition', '', search=False))
         self.BindingError = ''
+        self.BindingNotice, self.BindingNoticeUntil = '', 0.0
 
     def LayerIds(self):
         return self.ownerComp.Surface.LayerIds()
@@ -38,11 +53,46 @@ class ResolumeState:
 
     def Rebind(self):
         self.Bindings = {}
+        self.BoundComposition = ''
         self.ownerComp.store('layout7_bindings', {})
+        self.ownerComp.store('layout7_composition', '')
         self.BindingError = ''
+        self.BindingNotice, self.BindingNoticeUntil = '', 0.0
         self.Pending.clear()
         self.ownerComp.Surface.EncoderValues.clear()
         self.ownerComp.ResolumeOut.ClearPending()
+
+    def Notice(self):
+        """Transient binding message, e.g. 'Re-bound ...'. Empty once it expires."""
+        return self.BindingNotice if time.monotonic() < self.BindingNoticeUntil else ''
+
+    def CompositionKey(self, comp):
+        """Provenance handle for a binding set. The composition NAME, not the
+        name parameter's id: whether ids survive a composition save/reload is
+        undocumented (DESIGN.md R21), and a key that changed on every reload
+        would defeat strict mode's real job -- catching a layer edit inside the
+        composition the bindings were taken from."""
+        name = comp.get('name')
+        value = name.get('value') if isinstance(name, dict) else name
+        return str(value or '')
+
+    def _adopt(self, actual, key, notice=''):
+        self.Bindings = actual
+        self.BoundComposition = key
+        self.ownerComp.store('layout7_bindings', actual)
+        self.ownerComp.store('layout7_composition', key)
+        if not notice:
+            return
+        # The slots now resolve to different layers: optimistic values, encoder
+        # feedback and queued writes all describe the previous binding.
+        self.Pending.clear()
+        surface = self.ownerComp.Surface
+        surface.EncoderValues.clear()
+        surface.EncoderWritten.clear()
+        if self.ownerComp.ResolumeOut:
+            self.ownerComp.ResolumeOut.ClearPending()
+        self.BindingNotice = notice
+        self.BindingNoticeUntil = time.monotonic() + 20.0
 
     def Request(self, ext):
         self.PollPending = True
@@ -129,11 +179,21 @@ class ResolumeState:
             self.BindingError = 'Seven distinct existing layer indices required'
             return
         actual = {str(index): layers[index - 1].get('id') for index in ids}
-        if self.Bindings and self.Bindings != actual:
-            self.BindingError = 'Layer identities changed; Shift+Stop to rebind'
-        elif not self.Bindings:
-            self.Bindings = actual
-            self.ownerComp.store('layout7_bindings', actual)
+        key = self.CompositionKey(comp)
+        if not self.Bindings:
+            self._adopt(actual, key)
+        elif self.Bindings != actual or self.BoundComposition != key:
+            # Only a change inside the composition the bindings came from can
+            # mean "your controls would move to a different layer". Bindings of
+            # unknown provenance (saved before this key existed) or from another
+            # composition describe layers that are not on screen at all.
+            same_composition = bool(self.BoundComposition) and self.BoundComposition == key
+            if same_composition and self.ownerComp.Surface.Cfg('layer_binding_mode', 'adopt') == 'strict':
+                self.BindingError = 'Layer identities changed; Shift+Device to rebind'
+            elif same_composition:
+                self._adopt(actual, key, notice='Re-bound: layer identities changed')
+            else:
+                self._adopt(actual, key, notice='Re-bound to composition ' + (key or '(unnamed)'))
         for pos, index in enumerate(ids, 1):
             layer = layers[index - 1]
             lid, target = str(index), 'LAYER%d' % pos

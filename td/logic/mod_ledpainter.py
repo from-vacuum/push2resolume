@@ -76,6 +76,9 @@ def Describe(ext, kind, number):
         if action == 'surface_resync':
             data.update(label='Syncing' if state.Syncing else 'Resync failed' if state.SyncError else 'Resync state', active=state.Syncing)
             data['palette'] = 'WARN' if state.SyncError else 'WHITE_FULL' if state.Syncing else 'WHITE_DIM'
+        elif action == 'surface_hard_reset':
+            data.update(label='Hard reset: rebind + rebuild', active=True)
+            data['palette'] = 'WHITE_FULL'
         elif action == 'comp_bypass_toggle':
             target = s.HeldFocusTarget or 'COMPOSITION'
             path = '/composition' + ('/layers/' + s.LayerFor(target) if target != 'COMPOSITION' else '') + '/bypassed'
@@ -123,7 +126,8 @@ def Snapshot(ext):
     deck = next((d.get('name',{}).get('value','') for d in decks if d.get('selected',{}).get('value')), '')
     return {'armed':ext.Armed,'syncing':state.Syncing,'syncError':state.SyncError,'health':dict(ext.Health),'gridMode':s.GridMode,'bank':s.Bank,'bankCount':s.BankCount(),
             'clipRange':[start,start+7],'fxPage':s.FxPage,'fxPageCount':s.FxPageCount(),'encoderPage':s.EncoderPage,
-            'focus':s.FocusTarget,'modifiers':sorted(s.Modifiers),'bindingError':state.BindingError,'palette':colors,
+            'focus':s.FocusTarget,'modifiers':sorted(s.Modifiers),'bindingError':state.BindingError,
+            'bindingNotice':state.Notice(),'palette':colors,
             'targets':targets,'deck':deck,'deckCount':len(decks),'bpm':(state.Composition or {}).get('tempocontroller',{}).get('tempo',{}).get('value',0),
             'master':state.Value('/composition/master'),'composition':(state.Composition or {}).get('name',{}).get('value',''),
             'pads':[Describe(ext,'note',36+(7-r)*8+c) for r in range(8) for c in range(8)],

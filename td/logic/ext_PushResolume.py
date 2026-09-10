@@ -126,6 +126,30 @@ class PushResolumeExt:
 		"""Full runtime rebuild from the component's Refresh pulse or Textport."""
 		self.ownerComp.op('logic/parexec_refresh').module.refresh(self.ownerComp)
 
+	def Rebind(self):
+		"""Adopt the running composition's layer identities and rescan FX --
+		the software equivalent of the hard reset's first half, so rebinding
+		never depends on a connected Push."""
+		if self.ResolumeState is None:
+			return
+		self.ResolumeState.Rebind()
+		if self.FxRegistry:
+			self.FxRegistry.Rescan()
+		else:
+			self.ResolumeState.Request(self)
+		self.CheckHealth()
+
+	def HardReset(self):
+		"""Hardest tier of the reset ladder (Shift+Device). Drops the layer
+		identity bindings, then runs the full runtime rebuild through the
+		Refresh pulse. The pulse is deferred one frame because Refresh calls
+		initializeExtensions(), which must never run with this extension's own
+		method still on the call stack (see rules/td-python.md)."""
+		if self.ResolumeState is not None:
+			self.ResolumeState.Rebind()
+		self.Armed = False
+		run("args[0].par.Refresh.pulse()", self.ownerComp, delayFrames=1)
+
 	def FinishResync(self, error=''):
 		state = self.ResolumeState
 		state.Syncing, state.SyncError = False, error
@@ -176,7 +200,9 @@ class PushResolumeExt:
 		if mirror is not None and self.Surface:
 			rows = [['key', 'value'], ['mode', self.Surface.GridMode], ['bank', self.Surface.Bank],
 			        ['fx_page', self.Surface.FxPage], ['encoder_page', self.Surface.EncoderPage],
-			        ['focus', self.Surface.FocusTarget], ['binding_error', self.ResolumeState.BindingError]]
+			        ['focus', self.Surface.FocusTarget], ['binding_error', self.ResolumeState.BindingError],
+			        ['binding_notice', self.ResolumeState.Notice()],
+			        ['composition', self.ResolumeState.BoundComposition]]
 			text = '\n'.join('\t'.join(map(str, r)) for r in rows)
 			if mirror.text.strip() != text:
 				mirror.text = text

@@ -95,7 +95,7 @@ def RenderLCD(snapshot):
 	text('Focus '+focus.get('short','')+' '+focus.get('name',''),395,154,220,0.29)
 	text('%.1f BPM' % snapshot['bpm'],620,154,92,0.29)
 	text('Master %d%%' % round((snapshot.get('master') or 0)*100),718,154,98,0.29)
-	status = 'SYNCING' if snapshot.get('syncing') else 'RESYNC FAILED' if snapshot.get('syncError') else snapshot['bindingError'] or (' '.join(snapshot['modifiers']) if snapshot['modifiers'] else 'LIVE' if snapshot['armed'] else 'OFFLINE')
+	status = 'SYNCING' if snapshot.get('syncing') else 'RESYNC FAILED' if snapshot.get('syncError') else snapshot['bindingError'] or (' '.join(snapshot['modifiers']) if snapshot['modifiers'] else 'RE-BOUND' if snapshot.get('bindingNotice') else 'LIVE' if snapshot['armed'] else 'OFFLINE')
 	text(status,825,154,128,0.29,(103,221,168) if snapshot['armed'] else (255,105,90))
 	return np.concatenate((canvas, np.full((160,960,1),255,dtype=np.uint8)),axis=2)
 

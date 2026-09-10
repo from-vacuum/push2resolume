@@ -173,6 +173,7 @@ class RefreshTests(unittest.TestCase):
         self.ext.Health = {k: True for k in ('push_bound', 'push_mode', 'display',
                                            'resolume_state', 'layers_ok', 'websocket')}
         self.ext.FxRegistry.Registry = {'effect': {}}
+        self.ext.ResolumeState.Notice.return_value = ''
         self.ext.PushIO.Cfg.return_value = 'websocket'
         self.ext.Display.IsHelperAlive.return_value = True
         self.root = Mock(ext=SimpleNamespace(PushResolume=self.ext))
@@ -219,6 +220,16 @@ class RefreshTests(unittest.TestCase):
             self.module['_report'](self.root, 1, 7)
         self.assertEqual(self.storage['refresh_status']['bindingError'], reason)
         self.assertTrue(any(reason in str(c) for c in output.call_args_list))
+
+    def test_layer_rebind_notice_is_reported(self):
+        self.storage['refresh_status'] = {'token': 1}
+        self.ext.ResolumeState.Notice.return_value = 'Re-bound to composition FV_7Layers'
+        with patch('builtins.print') as output:
+            self.module['_report'](self.root, 1)
+        self.assertEqual(self.storage['refresh_status']['state'], 'success')
+        self.assertEqual(self.storage['refresh_status']['bindingNotice'],
+                         'Re-bound to composition FV_7Layers')
+        self.assertTrue(any('FV_7Layers' in str(c) for c in output.call_args_list))
 
     def test_stale_completion_cannot_replace_newer_status(self):
         self.storage['refresh_status'] = {'token': 2, 'state': 'running'}

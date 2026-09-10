@@ -165,11 +165,113 @@ class MappingTests(unittest.TestCase):
         self.o.ResolumeState.OnMessage(json.dumps(composition()),self.o)
         self.assertFalse(self.o.ResolumeState.LayerIdsOK())
 
-    def test_identity_change_disarms_and_clears(self):
+    def test_identity_change_disarms_and_clears_in_strict_mode(self):
+        self.s._cfg['layer_binding_mode']='strict'
         c=composition();c['layers'][2]['id']=999
         self.o.ResolumeState.OnMessage(json.dumps(c),self.o)
         self.assertFalse(self.o.ResolumeState.LayerIdsOK())
         self.assertIn('identities',self.o.ResolumeState.BindingError)
+        self.assertFalse(self.o.ResolumeState.Notice())
+
+    def test_identity_change_adopts_live_layers_by_default(self):
+        state=self.o.ResolumeState
+        state.Optimistic('/composition/layers/1/video/opacity',0.99)
+        self.s.EncoderValues['stale']=0.99
+        self.s.EncoderWritten['stale']=time.monotonic()
+        self.o.ResolumeOut.SendWSById(1001,1.0)
+        c=composition();c['layers'][2]['id']=999
+        state.OnMessage(json.dumps(c),self.o)
+        self.assertTrue(state.LayerIdsOK())
+        self.assertFalse(state.BindingError)
+        self.assertEqual(state.Bindings['3'],999)
+        self.assertEqual(self.o.storage['layout7_bindings']['3'],999)
+        self.assertIn('identities',state.Notice())
+        self.assertFalse(self.s.EncoderValues or self.s.EncoderWritten or state.Pending)
+        self.assertFalse(self.o.ResolumeOut._wsPending or self.o.ResolumeOut._oscPending)
+        self.assertAlmostEqual(state.Value('/composition/layers/1/video/opacity'),0.1)
+
+    def test_bindings_from_another_composition_are_adopted_even_when_strict(self):
+        # A .toe carrying bindings from another machine's composition: the saved
+        # layer ids describe layers that are not on screen at all.
+        state=self.o.ResolumeState
+        self.s._cfg['layer_binding_mode']='strict'
+        self.o.storage['layout7_bindings']={str(i):10_000+i for i in range(1,8)}
+        self.o.storage['layout7_composition']='MacShow'
+        state.Bindings=dict(self.o.storage['layout7_bindings'])
+        state.BoundComposition='MacShow'
+        state.OnMessage(json.dumps(composition()),self.o)
+        self.assertTrue(state.LayerIdsOK())
+        self.assertFalse(state.BindingError)
+        self.assertEqual(state.BoundComposition,'Fixture')
+        self.assertEqual(state.Bindings,{str(i):i for i in range(1,8)})
+        self.assertEqual(self.o.storage['layout7_composition'],'Fixture')
+        self.assertIn('Fixture',state.Notice())
+
+    def test_legacy_bindings_without_provenance_are_adopted_when_strict(self):
+        state=self.o.ResolumeState
+        self.s._cfg['layer_binding_mode']='strict'
+        self.o.storage.pop('layout7_composition',None)
+        state.Bindings={str(i):10_000+i for i in range(1,8)}
+        state.BoundComposition=''
+        state.OnMessage(json.dumps(composition()),self.o)
+        self.assertTrue(state.LayerIdsOK())
+        self.assertFalse(state.BindingError)
+        self.assertEqual(state.BoundComposition,'Fixture')
+
+    def test_matching_identities_leave_no_notice_and_do_not_rewrite_storage(self):
+        state=self.o.ResolumeState
+        self.o.storage['layout7_composition']='sentinel-untouched'
+        state.OnMessage(json.dumps(composition()),self.o)
+        self.assertTrue(state.LayerIdsOK())
+        self.assertFalse(state.Notice() or state.BindingError)
+        self.assertEqual(self.o.storage['layout7_composition'],'sentinel-untouched')
+
+    def test_notice_expires(self):
+        state=self.o.ResolumeState
+        c=composition();c['layers'][2]['id']=999
+        state.OnMessage(json.dumps(c),self.o)
+        self.assertTrue(state.Notice())
+        state.BindingNoticeUntil=time.monotonic()-0.1
+        self.assertFalse(state.Notice())
+
+    def test_rebind_clears_provenance(self):
+        state=self.o.ResolumeState
+        self.assertEqual(state.BoundComposition,'Fixture')
+        state.Rebind()
+        self.assertFalse(state.Bindings or state.BoundComposition)
+        self.assertFalse(self.o.storage['layout7_composition'])
+        state.OnMessage(json.dumps(composition()),self.o)
+        self.assertTrue(state.LayerIdsOK())
+        self.assertFalse(state.Notice())
+
+    def test_reset_ladder_stop_unmapped_device_tiers_escalate(self):
+        calls=[]
+        self.o.Resync=lambda: calls.append('soft')
+        self.o.HardReset=lambda: calls.append('hard')
+        self.assertEqual(self.press(29)['action'],'reserved')
+        self.s.Modifiers={'SHIFT'}
+        # Shift+Stop falls back to the unmodified reserved row rather than acting.
+        self.assertEqual(self.press(29)['action'],'reserved')
+        self.s.Modifiers=set()
+        self.assertEqual(self.press(110)['action'],'surface_resync')
+        self.s.Modifiers={'SHIFT'}
+        self.assertEqual(self.press(110)['action'],'surface_hard_reset')
+        self.assertEqual(calls,['soft','hard'])
+        self.assertFalse(self.o.ResolumeOut._oscPending or self.o.ResolumeOut._wsPending)
+
+    def test_hard_reset_drops_bindings_and_defers_refresh_pulse(self):
+        deferred=[]
+        cls=runpy.run_path(str(ROOT/'td/logic/ext_PushResolume.py'),
+                           init_globals={'run':lambda *a,**kw:deferred.append((a,kw))})['PushResolumeExt']
+        self.o.HardReset=types.MethodType(cls.HardReset,self.o)
+        self.o.HardReset()
+        state=self.o.ResolumeState
+        self.assertFalse(state.Bindings or state.BoundComposition)
+        self.assertFalse(self.o.storage['layout7_composition'])
+        self.assertFalse(self.o.Armed)
+        self.assertEqual(len(deferred),1)
+        self.assertIn('par.Refresh.pulse()',deferred[0][0][0])
+        self.assertEqual(deferred[0][1],{'delayFrames':1})
 
     def test_empty_clips_are_inert_and_state_replaced(self):
         c=composition();c['layers'][0]['clips']=[]

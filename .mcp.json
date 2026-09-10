@@ -2,14 +2,14 @@
   "mcpServers": {
     "envoy": {
       "type": "stdio",
-      "command": "/Users/serhii_pichkurov/Desktop/Push2Resolume/.venv/bin/python3",
+      "command": "H:/TD/push2resolume/.venv/Scripts/python.exe",
       "args": [
         "-u",
-        "/Users/serhii_pichkurov/Desktop/Push2Resolume/.embody/envoy-bridge.py",
+        "H:/TD/push2resolume/.embody/envoy-bridge.py",
         "--port",
         "9870",
         "--config",
-        "/Users/serhii_pichkurov/Desktop/Push2Resolume/.embody/envoy.json"
+        "H:/TD/push2resolume/.embody/envoy.json"
       ]
     }
   }

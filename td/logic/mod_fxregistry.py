@@ -260,5 +260,5 @@ class FxRegistry:
 			e['_pending_until'] = time.time() + 0.5
 
 	def Rescan(self):
-		"""Shift+Stop manual rescan: force a fresh REST read and rebuild."""
+		"""Manual rescan (hard reset / Rebind): force a fresh REST read and rebuild."""
 		self.ownerComp.ResolumeState.Request(self.ownerComp)

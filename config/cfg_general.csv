@@ -6,6 +6,7 @@ resolume_web_port,8080,Resolume Preferences > Webserver. Serves both REST and We
 state_source,websocket,websocket | rest_poll | none.
 fx_transport,ws_param_id,"ws_param_id | osc_name_guess | off. ws_param_id is name-proof, rename-proof, duplicate-proof."
 layer_ids,"1,2,3,4,5,6,7",Seven 1-based Resolume layer indices; Composition is separate.
+layer_binding_mode,adopt,"adopt | strict. adopt: when the running composition's layer identities no longer match the saved bindings, take the live ones, drop stale feedback and flash RE-BOUND -- the surface follows Resolume. strict: keep the saved bindings and disarm with 'Layer identities changed' until Shift+Device (or Rebind()) -- but only for a change WITHIN the composition the bindings came from; bindings of unknown or different provenance are always adopted."
 clips_per_bank,8,"One row per layer, eight clips per bank."
 bank_count,16,Baseline banks of eight; expands for longer decks.
 fx_slots_per_target,16,"Logical slots per target; eight targets, two pages of eight."

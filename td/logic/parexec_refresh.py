@@ -86,12 +86,16 @@ def _report(root, token, attempt=0):
             return
         count = len(root.ext.PushResolume.FxRegistry.Registry)
         binding_error = root.ext.PushResolume.ResolumeState.BindingError if not checks['Layer mappings'] else ''
+        notice = root.ext.PushResolume.ResolumeState.Notice()
         root.store('refresh_status', dict(token=token, state='success' if success else 'failed',
-                                        checks=checks, effects=count, bindingError=binding_error))
+                                        checks=checks, effects=count, bindingError=binding_error,
+                                        bindingNotice=notice))
         for name, ok in checks.items():
             print('[Push Refresh] %s: %s' % (name, 'OK' if ok else 'FAILED'))
         if binding_error:
             print('[Push Refresh] Layer mappings: ' + binding_error)
+        if notice:
+            print('[Push Refresh] Layer mappings: ' + notice)
         print('[Push Refresh] %s | %d FX mapped' % ('SUCCESS' if success else 'FAILED', count))
     except Exception:
         _fail(root, token, traceback.format_exc())

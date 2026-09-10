@@ -10,6 +10,9 @@ def _decode_relative(v):
     return v if 1 <= v <= 63 else v - 128 if 65 <= v <= 127 else 0
 
 
+_AST_CACHE = {}
+
+
 def _expression(expression, context):
     def read(n):
         if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
@@ -20,7 +23,15 @@ def _expression(expression, context):
             a, b = read(n.left), read(n.right)
             return a + b if isinstance(n.op, ast.Add) else a - b if isinstance(n.op, ast.Sub) else a * b
         raise ValueError('Unsupported mapping expression: ' + str(expression))
-    return read(ast.parse(str(expression), mode='eval').body)
+    # Every expression comes from a config table or a control_path template, so
+    # the set is small and fixed; parsing them on each of ~140 repainted controls
+    # at 30 Hz was the single hottest call in the project. The tree is only read,
+    # never mutated, so it is safe to share.
+    key = str(expression)
+    tree = _AST_CACHE.get(key)
+    if tree is None:
+        tree = _AST_CACHE[key] = ast.parse(key, mode='eval').body
+    return read(tree)
 
 
 class Surface:
@@ -34,6 +45,7 @@ class Surface:
         self.EncoderValues, self.EncoderWritten = {}, {}
         self.ClipScrollX = 0.0
         self._index, self._cfg = {}, {}
+        self._layerIdsRaw, self._layerIds = None, []
         self.LoadCfg()
         self.BuildIndex()
 
@@ -56,7 +68,13 @@ class Surface:
         return len(self._index)
 
     def LayerIds(self):
-        return [p.strip() for p in self.Cfg('layer_ids', '1,2,3,4,5,6,7').split(',') if p.strip()]
+        # Re-split only when the configured string actually changes: this is
+        # called several hundred times per repaint, at 30 Hz.
+        raw = self.Cfg('layer_ids', '1,2,3,4,5,6,7')
+        if raw != self._layerIdsRaw:
+            self._layerIdsRaw = raw
+            self._layerIds = [p.strip() for p in raw.split(',') if p.strip()]
+        return self._layerIds
 
     def Targets(self):
         return ['LAYER%d' % i for i in range(1, len(self.LayerIds()) + 1)] + ['COMPOSITION']
@@ -115,7 +133,11 @@ class Surface:
             raise ValueError('Unknown focus target: ' + str(focus))
         ctx['FOCUS'] = '' if focus == 'COMPOSITION' else '/layers/' + self.LayerFor(focus)
         ctx['LAST_LAYER'] = self.LayerFor(self.LastLayerTarget)
-        ctx['ACTIVE_CLIP'] = self.ownerComp.ResolumeState.ActiveClip(target) or 0 if self.ownerComp.ResolumeState else 0
+        # ActiveClip() scans every clip in the composition, and only the 14
+        # speed rows reference this token -- resolving it for every repainted
+        # control at 30 Hz was pure waste. It never appears in a slot expression.
+        if 'ACTIVE_CLIP' in control_path:
+            ctx['ACTIVE_CLIP'] = self.ownerComp.ResolumeState.ActiveClip(target) or 0 if self.ownerComp.ResolumeState else 0
         if slot_expr:
             ctx['slot'] = _expression(slot_expr, ctx)
         def replace(m):
@@ -148,7 +170,11 @@ class Surface:
             clip = state.Clips.get((self.LayerFor(row['target']), self.Slot(row))) if state else None
             return bool(clip and clip.get('present'))
         if action == 'column_connect':
-            return bool(state and any(c.get('present') for (lid, ci), c in state.Clips.items() if ci == self.Slot(row)))
+            # Hoisted: Slot() parses an expression, and this scans every clip in
+            # the composition (7 layers x 128 = ~900) for each of the 8 column
+            # controls, on every LED/LCD repaint at 30 Hz.
+            slot = self.Slot(row)
+            return bool(state and any(c.get('present') for (lid, ci), c in state.Clips.items() if ci == slot))
         if action in ('fx_opacity_toggle', 'fx_bypass_toggle', 'fx_capture_on_value'):
             registry = self.ownerComp.FxRegistry
             entry = registry.Registry.get('%s:%d' % (row['target'], self.Slot(row))) if registry else None
@@ -198,6 +224,8 @@ class Surface:
             ext.Panic()
         elif action == 'surface_resync':
             ext.Resync()
+        elif action == 'surface_hard_reset':
+            ext.HardReset()
         elif action == 'fx_registry_rescan':
             ext.ResolumeState.Rebind()
             ext.FxRegistry.Rescan()
